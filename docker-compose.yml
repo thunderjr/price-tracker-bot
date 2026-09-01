@@ -1,0 +1,19 @@
+services:
+  bot:
+    build: .
+    image: price-tracker-bot
+    restart: unless-stopped
+    init: true
+    # Chromium writes a lot through /dev/shm; the 64MB default makes it crash
+    # on content-heavy pages.
+    shm_size: 1g
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-3h}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ptb-data:/data
+
+volumes:
+  ptb-data:

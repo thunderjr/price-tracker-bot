@@ -1,0 +1,63 @@
+# Hand-labelled from a live "ps5" search on amazon.com.br.
+# The tracked product is the console; bundles that include one still count.
+# drop = game, accessory, controller, spare part, a different device, or a
+# cross-border listing whose price excludes Brazilian import tax.
+keep B0FPGF9J2J  PlayStation 5 Slim Digital 825GB - Pacote ASTRO BOT
+keep B0F8R9NDXC  PlayStation 5 Slim Disk - Pacote ASTRO BOT
+keep B0GWNFMG5L  PlayStation 5 Slim Disk 1TB
+keep B0H6LVH152  Bundle GTA VI + PlayStation 5 Slim Digital
+keep B0GWNKJDCZ  PlayStation 5 Edicao Digital 825GB
+keep B09FGCKBPK  Console PlayStation 5 - Digital Edition
+keep B0DH8J5YGH  PlayStation 5 Pro
+keep B0CKZGY5B6  Sony PlayStation 5 Slim 1TB Spider-Man 2
+keep B0CQKJN2C6  PlayStation 5 Slim Edicao Digital
+keep B0FPD9WL3X  Console PS5 c/Drive Slim 1 TB
+keep B0H6LPVFWQ  Bundle GTA VI + PlayStation 5 Slim Disk
+keep B09FGC9T19  Console PlayStation 5
+keep B0DTJ771FF  Console PS5 c/Drive Slim 1TB
+keep B0CSPNDPKG  PlayStation 5 Slim Disk + 2 Jogos
+keep B0CKCS5B6D  Console PlayStation 5 + Spider-Man 2
+keep B0BLW5C5KN  PlayStation 5 + God of War Ragnarok
+drop B0FTRYCKT1  international version: price excludes import tax
+keep B0CYJBWGH5  PlayStation 5 Slim Edicao Digital com 2 Jogos
+keep B0FML8XKTZ  Pack do console PlayStation 5 Edicao Limitada Ouro
+keep B0FVM6216K  PlayStation PS5 Digital Edition 825GB Fortnite Bundle
+keep B0BNSR6S9Z  Console PlayStation 5 - Digital Edition
+keep B0DJH2NS6R  PlayStation 5 Pro
+keep B0CXPWN77C  Sony PlayStation 5 Slim Disc Edition
+drop B08TBF4S42  headset
+drop B0F2NDKSKX  racing wheel
+drop B09W34XDK6  suporte
+drop B0B6T3FQ1D  suporte
+drop B0HFPLXM48  game + controller bundle, no console
+drop B0H6KT2RWH  game
+drop B0CMXL75GH  disc drive
+drop B09H2P828W  game
+drop B0HDW2HDHW  game + action figure bundle
+drop B0GWCCBDRR  game
+drop B0GGLJCJQM  game
+drop B0D22D1M8B  game
+drop B0HCQYG4NM  game
+drop B0H2KBN3K1  game
+drop B0CHZ18WJW  game
+drop B0GWGTH4LF  game
+drop B08HNSHD7K  controller
+drop B0D6HPB6SF  game
+drop B0H8ZLZF3W  game
+drop B0F6F6MYP1  game
+drop B0GY5YZC4P  game
+drop B0HGGNZY3Y  game
+drop B088GNW267  controller
+drop B0FZDSXJMY  game
+drop B08JF5HQF1  game
+drop B0GP8M96YY  game
+drop B0B12R84W3  game
+drop B0CL5HJNLM  disc drive
+drop B0B4FZK237  suporte
+drop B0GDWFZXYN  suporte
+drop B0BQ6Q4DQV  capa
+drop B0B6SDXRLY  suporte
+drop B0H6GX25XY  ventilador
+drop B0GJR2GW5L  suporte
+drop B0GM941VFJ  suporte
+drop B0B6SL5WZN  suporte

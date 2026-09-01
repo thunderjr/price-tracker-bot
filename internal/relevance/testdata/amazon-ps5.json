@@ -1,0 +1,561 @@
+[
+  {
+    "source": "amazon",
+    "external_id": "B0FPGF9J2J",
+    "title": "PlayStation®5 Slim Digital 825GB – Pacote ASTRO BOT e Gran Turismo 7",
+    "url": "https://www.amazon.com.br/dp/B0FPGF9J2J",
+    "image_url": "https://m.media-amazon.com/images/I/71WCygaQDAL._AC_UL320_.jpg",
+    "price_cents": 418406,
+    "list_price_cents": 449900,
+    "rating": 4.8,
+    "site_flags": [
+      "Escolha",
+      "da Amazon"
+    ]
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0F8R9NDXC",
+    "title": "PlayStation®5 Slim Disk - Pacote ASTRO BOT e Gran Turismo 7",
+    "url": "https://www.amazon.com.br/dp/B0F8R9NDXC",
+    "image_url": "https://m.media-amazon.com/images/I/71IkUBtdDGL._AC_UL320_.jpg",
+    "price_cents": 474291,
+    "list_price_cents": 509990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GWNFMG5L",
+    "title": "PlayStation 5 Slim Disk 1TB 1 Controle Branco Sony",
+    "url": "https://www.amazon.com.br/dp/B0GWNFMG5L",
+    "image_url": "https://m.media-amazon.com/images/I/51dYyIDySDL._AC_UL320_.jpg",
+    "price_cents": 459990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0H6LVH152",
+    "title": "Bundle GTA VI + PlayStation 5 Slim Digital 825 GB Pacote Astro Bot e Gran Turismo 7",
+    "url": "https://www.amazon.com.br/dp/B0H6LVH152",
+    "image_url": "https://m.media-amazon.com/images/I/71j0ScLcfLL._AC_UL320_.jpg",
+    "price_cents": 460247,
+    "list_price_cents": 504980
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GWNKJDCZ",
+    "title": "PlayStation 5 Edição Digital 825GB 1 Controle Branco Sony",
+    "url": "https://www.amazon.com.br/dp/B0GWNKJDCZ",
+    "image_url": "https://m.media-amazon.com/images/I/319QTMDdZhL._AC_UL320_.jpg",
+    "price_cents": 419900,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B09FGCKBPK",
+    "title": "Console PlayStation 5 - Digital Edition",
+    "url": "https://www.amazon.com.br/dp/B09FGCKBPK",
+    "image_url": "https://m.media-amazon.com/images/I/51aaVzIW6DL._AC_UL320_.jpg",
+    "price_cents": 429900,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0DH8J5YGH",
+    "title": "PlayStation®5 Pro",
+    "url": "https://www.amazon.com.br/dp/B0DH8J5YGH",
+    "image_url": "https://m.media-amazon.com/images/I/51dfg52K-cL._AC_UL320_.jpg",
+    "price_cents": 708125,
+    "list_price_cents": 749990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CKZGY5B6",
+    "title": "Sony PlayStation 5 Slim 1TB Spider-Man 2",
+    "url": "https://www.amazon.com.br/dp/B0CKZGY5B6",
+    "image_url": "https://m.media-amazon.com/images/I/71rWPpdhwgL._AC_UL320_.jpg",
+    "price_cents": 479990,
+    "rating": 4.7
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CQKJN2C6",
+    "title": "PlayStation®5 Slim Edição Digital",
+    "url": "https://www.amazon.com.br/dp/B0CQKJN2C6",
+    "image_url": "https://m.media-amazon.com/images/I/51SM5xU-M1L._AC_UL320_.jpg",
+    "price_cents": 429990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0FPD9WL3X",
+    "title": "Console PS5 c/Drive Slim 1 TB c/ 1 Controle + EA FC 26",
+    "url": "https://www.amazon.com.br/dp/B0FPD9WL3X",
+    "image_url": "https://m.media-amazon.com/images/I/51FiRN6hupL._AC_UL320_.jpg",
+    "price_cents": 479990,
+    "rating": 3.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0H6LPVFWQ",
+    "title": "Bundle GTA VI + PlayStation 5 Slim Disk Pacote Astro Bot e Gran Turismo 7",
+    "url": "https://www.amazon.com.br/dp/B0H6LPVFWQ",
+    "image_url": "https://m.media-amazon.com/images/I/61BfzLg6hWL._AC_UL320_.jpg",
+    "price_cents": 516131,
+    "list_price_cents": 554980
+  },
+  {
+    "source": "amazon",
+    "external_id": "B09FGC9T19",
+    "title": "Console PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B09FGC9T19",
+    "image_url": "https://m.media-amazon.com/images/I/41bsdF9lMPL._AC_UL320_.jpg",
+    "price_cents": 459990,
+    "rating": 4.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0DTJ771FF",
+    "title": "Console PS5 c/Drive Slim 1TB + 1 Controle",
+    "url": "https://www.amazon.com.br/dp/B0DTJ771FF",
+    "image_url": "https://m.media-amazon.com/images/I/41QdEIWVtmL._AC_UL320_.jpg",
+    "price_cents": 499990,
+    "rating": 4.4
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CSPNDPKG",
+    "title": "PlayStation®5 Slim Disk + 2 Jogos",
+    "url": "https://www.amazon.com.br/dp/B0CSPNDPKG",
+    "image_url": "https://m.media-amazon.com/images/I/71Q8qo9ZhnL._AC_UL320_.jpg",
+    "price_cents": 479990,
+    "rating": 4.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CKCS5B6D",
+    "title": "Console PlayStation®5 + Marvel's Spider-Man 2",
+    "url": "https://www.amazon.com.br/dp/B0CKCS5B6D",
+    "image_url": "https://m.media-amazon.com/images/I/612SFC+tsbL._AC_UL320_.jpg",
+    "price_cents": 479990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0BLW5C5KN",
+    "title": "PlayStation®5 + God of War Ragnarök",
+    "url": "https://www.amazon.com.br/dp/B0BLW5C5KN",
+    "image_url": "https://m.media-amazon.com/images/I/61hJ40qZKKL._AC_UL320_.jpg",
+    "price_cents": 479990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0FTRYCKT1",
+    "title": "Sony PlayStation 5 Slim Digital Console 825GB - International Version",
+    "url": "https://www.amazon.com.br/dp/B0FTRYCKT1",
+    "image_url": "https://m.media-amazon.com/images/I/516yiK6U+FL._AC_UL320_.jpg",
+    "price_cents": 429990,
+    "rating": 4.7
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CYJBWGH5",
+    "title": "PlayStation®5 Slim Edição Digital com 2 Jogos",
+    "url": "https://www.amazon.com.br/dp/B0CYJBWGH5",
+    "image_url": "https://m.media-amazon.com/images/I/71ANJQTALWL._AC_UL320_.jpg",
+    "price_cents": 469990,
+    "rating": 4.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0FML8XKTZ",
+    "title": "Pack do console PlayStation®5 – Edição Limitada Ouro - Ghost of Yōtei",
+    "url": "https://www.amazon.com.br/dp/B0FML8XKTZ",
+    "image_url": "https://m.media-amazon.com/images/I/51LyTT+q3WL._AC_UL320_.jpg",
+    "price_cents": 609990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0FVM6216K",
+    "title": "PlayStation PS5 Digital Edtion 825GB - Fortnite Bundle",
+    "url": "https://www.amazon.com.br/dp/B0FVM6216K",
+    "image_url": "https://m.media-amazon.com/images/I/51CV4Za1YLL._AC_UL320_.jpg",
+    "price_cents": 496900,
+    "rating": 4.6
+  },
+  {
+    "source": "amazon",
+    "external_id": "B08TBF4S42",
+    "title": "NUBWO Wireless Gaming Headset with Mic for Ps5 Ps4 PC, Zero Interference, 100-Hour Battery All-Day Play, 23ms Sync​ for Fortnite \u0026 Call of Duty/FPS Gamers, Triple Mode All Devices Compatible - Orange",
+    "url": "https://www.amazon.com.br/dp/B08TBF4S42",
+    "image_url": "https://m.media-amazon.com/images/I/61cRrWcW-pL._AC_UL320_.jpg",
+    "price_cents": 29496,
+    "list_price_cents": 31049,
+    "rating": 4.4
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0F2NDKSKX",
+    "title": "Thrustmaster T248R, 3.1 N⋅m Force Feedback Racing Wheel and Pedal Set (Compatible with PS5, PS4 and PC)",
+    "url": "https://www.amazon.com.br/dp/B0F2NDKSKX",
+    "image_url": "https://m.media-amazon.com/images/I/81mZYGYgPeL._AC_UL320_.jpg",
+    "price_cents": 299990,
+    "rating": 4.1
+  },
+  {
+    "source": "amazon",
+    "external_id": "B09W34XDK6",
+    "title": "Suporte TwiHill para PS5 com Estação de Carregamento de Controlador e Estação de Refrigeração para Playstation 5 Console Edição Digital e Versão de Disco (Não disponível para Versão PS5 Slim)",
+    "url": "https://www.amazon.com.br/dp/B09W34XDK6",
+    "image_url": "https://m.media-amazon.com/images/I/71ktCSB5LGL._AC_UL320_.jpg",
+    "price_cents": 23999,
+    "rating": 4.4
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0B6T3FQ1D",
+    "title": "Suporte para PS5 com estação de resfriamento e carregador de controle duplo para console Playstation 5 PS5, base PS5 com ventoinha, base de carregamento e suporte de jogo (Não suporta PS5 Slim)",
+    "url": "https://www.amazon.com.br/dp/B0B6T3FQ1D",
+    "image_url": "https://m.media-amazon.com/images/I/61bIUTkj1TL._AC_UL320_.jpg",
+    "price_cents": 34899,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0BNSR6S9Z",
+    "title": "Console PlayStation 5 - Digital Edition",
+    "url": "https://www.amazon.com.br/dp/B0BNSR6S9Z",
+    "image_url": "https://m.media-amazon.com/images/I/41tMlbxd9LL._AC_UL320_.jpg",
+    "price_cents": 429990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0HFPLXM48",
+    "title": "Bundle GTA VI PlayStation 5 + Controle sem fio PlayStation DualSense™ Techno Red",
+    "url": "https://www.amazon.com.br/dp/B0HFPLXM48",
+    "image_url": "https://m.media-amazon.com/images/I/616ExW9VR5L._AC_UL320_.jpg",
+    "price_cents": 88257,
+    "list_price_cents": 104980,
+    "site_flags": [
+      "Menor preço em 365 dias"
+    ]
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0DJH2NS6R",
+    "title": "PlayStation 5 Pro",
+    "url": "https://www.amazon.com.br/dp/B0DJH2NS6R",
+    "image_url": "https://m.media-amazon.com/images/I/51fRDc+9ajL._AC_UL320_.jpg",
+    "price_cents": 768800,
+    "rating": 4.6
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0H6KT2RWH",
+    "title": "Grand Theft Auto VI - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0H6KT2RWH",
+    "image_url": "https://m.media-amazon.com/images/I/81o4MCqBv5L._AC_UL320_.jpg",
+    "price_cents": 41840,
+    "list_price_cents": 44990
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CMXL75GH",
+    "title": "PlayStation 5 Slim Ultra HD Blu-ray Disc Drive, Black [video game]",
+    "url": "https://www.amazon.com.br/dp/B0CMXL75GH",
+    "image_url": "https://m.media-amazon.com/images/I/415S-Puzd8L._AC_UL320_.jpg",
+    "price_cents": 75000,
+    "rating": 4.7
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CXPWN77C",
+    "title": "Sony PlayStation 5 Slim Disc Edition DualSense Wireless Controller Double Pack PS5 - KSA Version White and Black Controllers",
+    "url": "https://www.amazon.com.br/dp/B0CXPWN77C",
+    "image_url": "https://m.media-amazon.com/images/I/51FZ4EQEtrL._AC_UL320_.jpg",
+    "price_cents": 499990,
+    "rating": 4.1
+  },
+  {
+    "source": "amazon",
+    "external_id": "B09H2P828W",
+    "title": "Sony Gran Turismo 7 PS5, Black",
+    "url": "https://www.amazon.com.br/dp/B09H2P828W",
+    "image_url": "https://m.media-amazon.com/images/I/81a31luMs9L._AC_UL320_.jpg",
+    "price_cents": 11000,
+    "rating": 4.7
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0HDW2HDHW",
+    "title": "Bundle Star Wars Zero Company PlayStation 5 + Figura de Ação Hasbro Star Wars The Black Series Sandtrooper",
+    "url": "https://www.amazon.com.br/dp/B0HDW2HDHW",
+    "image_url": "https://m.media-amazon.com/images/I/61AttGF7jkL._AC_UL320_.jpg",
+    "price_cents": 63221,
+    "list_price_cents": 67980
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GWCCBDRR",
+    "title": "Marvel's Wolverine - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0GWCCBDRR",
+    "image_url": "https://m.media-amazon.com/images/I/71TFl2Rn3KL._AC_UL320_.jpg",
+    "price_cents": 37107,
+    "list_price_cents": 39900
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GGLJCJQM",
+    "title": "Resident Evil Requiem - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0GGLJCJQM",
+    "image_url": "https://m.media-amazon.com/images/I/71xKlhR+NtL._AC_UL320_.jpg",
+    "price_cents": 27990,
+    "list_price_cents": 34990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0D22D1M8B",
+    "title": "Ps5 Star Wars Outlaws",
+    "url": "https://www.amazon.com.br/dp/B0D22D1M8B",
+    "image_url": "https://m.media-amazon.com/images/I/81QMVr4pZJL._AC_UL320_.jpg",
+    "price_cents": 19504,
+    "rating": 4.4
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0HCQYG4NM",
+    "title": "Onimusha: Way of the Sword - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0HCQYG4NM",
+    "image_url": "https://m.media-amazon.com/images/I/71-l4WnB2iL._AC_UL320_.jpg",
+    "price_cents": 30591,
+    "list_price_cents": 33990
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0H2KBN3K1",
+    "title": "Red Dead Redemption - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0H2KBN3K1",
+    "image_url": "https://m.media-amazon.com/images/I/61-lT5Jq0FL._AC_UL320_.jpg",
+    "price_cents": 17856,
+    "list_price_cents": 19200,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CHZ18WJW",
+    "title": "Marvel's Spider-Man 2 PS5",
+    "url": "https://www.amazon.com.br/dp/B0CHZ18WJW",
+    "image_url": "https://m.media-amazon.com/images/I/81RfcW3Ml-L._AC_UL320_.jpg",
+    "price_cents": 17899,
+    "list_price_cents": 39990,
+    "rating": 4.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GWGTH4LF",
+    "title": "The Blood of Dawnwalker - Edição Steelbook PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0GWGTH4LF",
+    "image_url": "https://m.media-amazon.com/images/I/71AMXryo5wL._AC_UL320_.jpg",
+    "price_cents": 37997,
+    "list_price_cents": 39997
+  },
+  {
+    "source": "amazon",
+    "external_id": "B08HNSHD7K",
+    "title": "Sony PlayStation 5 DualSense Wireless Controller - White",
+    "url": "https://www.amazon.com.br/dp/B08HNSHD7K",
+    "image_url": "https://m.media-amazon.com/images/I/71c1M7bkMML._AC_UL320_.jpg",
+    "price_cents": 42000,
+    "rating": 4.7
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0D6HPB6SF",
+    "title": "ASTRO BOT – PS5",
+    "url": "https://www.amazon.com.br/dp/B0D6HPB6SF",
+    "image_url": "https://m.media-amazon.com/images/I/81snwIyJDiL._AC_UL320_.jpg",
+    "price_cents": 19697,
+    "list_price_cents": 33990,
+    "rating": 4.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0H8ZLZF3W",
+    "title": "Star Wars Zero Company - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0H8ZLZF3W",
+    "image_url": "https://m.media-amazon.com/images/I/71zMAdkLHYL._AC_UL320_.jpg",
+    "price_cents": 31610,
+    "list_price_cents": 33990,
+    "site_flags": [
+      "Você paga R$ 305,91"
+    ]
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0F6F6MYP1",
+    "title": "Ghost of Yōtei - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0F6F6MYP1",
+    "image_url": "https://m.media-amazon.com/images/I/81T4Iic4FRL._AC_UL320_.jpg",
+    "price_cents": 31990,
+    "list_price_cents": 39990,
+    "rating": 4.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GY5YZC4P",
+    "title": "Assassin's Creed Black Flag Resynced - Playstation 5",
+    "url": "https://www.amazon.com.br/dp/B0GY5YZC4P",
+    "image_url": "https://m.media-amazon.com/images/I/81tL1fXfG6L._AC_UL320_.jpg",
+    "price_cents": 29997,
+    "list_price_cents": 31997,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0HGGNZY3Y",
+    "title": "EA Sports FC 27 - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0HGGNZY3Y",
+    "image_url": "https://m.media-amazon.com/images/I/71OmGCyRnHL._AC_UL320_.jpg",
+    "price_cents": 35330,
+    "list_price_cents": 37990,
+    "site_flags": [
+      "Você paga R$ 341,91"
+    ]
+  },
+  {
+    "source": "amazon",
+    "external_id": "B088GNW267",
+    "title": "Controle DualSense - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B088GNW267",
+    "image_url": "https://m.media-amazon.com/images/I/5102Pp-TfHL._AC_UL320_.jpg",
+    "price_cents": 40755,
+    "list_price_cents": 46990,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0FZDSXJMY",
+    "title": "007 First Light - Specialist Edition (Exclusivo Amazon) - PlayStation 5",
+    "url": "https://www.amazon.com.br/dp/B0FZDSXJMY",
+    "image_url": "https://m.media-amazon.com/images/I/61mxvp+aRrL._AC_UL320_.jpg",
+    "price_cents": 26991,
+    "list_price_cents": 29990,
+    "rating": 4.7
+  },
+  {
+    "source": "amazon",
+    "external_id": "B08JF5HQF1",
+    "title": "Godfall - (PS5) Playstation 5",
+    "url": "https://www.amazon.com.br/dp/B08JF5HQF1",
+    "image_url": "https://m.media-amazon.com/images/I/81WRteGNeuL._AC_UL320_.jpg",
+    "price_cents": 6997,
+    "rating": 4.6
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GP8M96YY",
+    "title": "MARVEL Tōkon: Fighting Souls - PS5",
+    "url": "https://www.amazon.com.br/dp/B0GP8M96YY",
+    "image_url": "https://m.media-amazon.com/images/I/91jcz8M6lBL._AC_UL320_.jpg",
+    "price_cents": 31527,
+    "list_price_cents": 33900,
+    "rating": 4.7
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0B12R84W3",
+    "title": "Gotham Knights PS5",
+    "url": "https://www.amazon.com.br/dp/B0B12R84W3",
+    "image_url": "https://m.media-amazon.com/images/I/91ClDMOrAwL._AC_UL320_.jpg",
+    "price_cents": 17457,
+    "rating": 4.4
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0CL5HJNLM",
+    "title": "Unidade de disco para consoles PS5® Digital (PS5 Slim e Pro)",
+    "url": "https://www.amazon.com.br/dp/B0CL5HJNLM",
+    "image_url": "https://m.media-amazon.com/images/I/41Z3js9aNtL._AC_UL320_.jpg",
+    "price_cents": 63550,
+    "list_price_cents": 64900,
+    "rating": 4.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0B4FZK237",
+    "title": "Suporte PS5/PS5 Slim e estação de resfriamento com estação de carregamento de controle duplo para console Playstation 5, acessórios PS5 incl. ventoinha, suporte para fone de ouvido",
+    "url": "https://www.amazon.com.br/dp/B0B4FZK237",
+    "image_url": "https://m.media-amazon.com/images/I/71MwQkqmRWL._AC_UL320_.jpg",
+    "price_cents": 20999,
+    "rating": 4.4
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GDWFZXYN",
+    "title": "Suporte Cooler de Resfriamento Compatível com Console PS5/Slim/Pro, Incluindo Carregador de Controle, base de Resfriamento e Ventilador Ajustável em Três Velocidades",
+    "url": "https://www.amazon.com.br/dp/B0GDWFZXYN",
+    "image_url": "https://m.media-amazon.com/images/I/6156nd5kmjL._AC_UL320_.jpg",
+    "price_cents": 18905,
+    "list_price_cents": 19900,
+    "rating": 3.9
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0BQ6Q4DQV",
+    "title": "Capa Protetora contra Poeira para PS5, Protetor Vertical contra Poeira Em Tecido Oxford para Console Digital e Console de CD-ROM (Preto)",
+    "url": "https://www.amazon.com.br/dp/B0BQ6Q4DQV",
+    "image_url": "https://m.media-amazon.com/images/I/61o+kTmD0EL._AC_UL320_.jpg",
+    "price_cents": 11872,
+    "rating": 3.7
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0B6SDXRLY",
+    "title": "Suporte para PS5 com 2 ventoinhas de resfriamento, estação de carregamento de controle duplo rápido PS5, estação de resfriamento PS5 Suporte vertical para Sony Playstation 5 Digital/Disc Edition",
+    "url": "https://www.amazon.com.br/dp/B0B6SDXRLY",
+    "image_url": "https://m.media-amazon.com/images/I/71bhI1NAtFL._AC_UL320_.jpg",
+    "price_cents": 25999,
+    "rating": 4.4
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0H6GX25XY",
+    "title": "Ventilador de Resfriamento para PS5, 3 Ventoinhas LED, 5500 RPM",
+    "url": "https://www.amazon.com.br/dp/B0H6GX25XY",
+    "image_url": "https://m.media-amazon.com/images/I/51-duJgoIiL._AC_UL320_.jpg",
+    "price_cents": 7590
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GJR2GW5L",
+    "title": "Suporte PS5 com Cooler Duplo e Carregador de Controles – Compatível com PS5 – Base 3 em 1 com Ventilação e Organização Gamer (Branco)",
+    "url": "https://www.amazon.com.br/dp/B0GJR2GW5L",
+    "image_url": "https://m.media-amazon.com/images/I/61LcKjllEeL._AC_UL320_.jpg",
+    "price_cents": 22790,
+    "list_price_cents": 23990,
+    "rating": 4.2
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0GM941VFJ",
+    "title": "Suporte Vertical Playstation 5 Ps5 Em Metal Antiderrapante",
+    "url": "https://www.amazon.com.br/dp/B0GM941VFJ",
+    "image_url": "https://m.media-amazon.com/images/I/51j623LFZBL._AC_UL320_.jpg",
+    "price_cents": 6950,
+    "rating": 4.8
+  },
+  {
+    "source": "amazon",
+    "external_id": "B0B6SL5WZN",
+    "title": "Suporte ps5 com estação de resfriamento e carregador de controlador playstation 5 estação de carregador de controlador duplo para console ps5 com 3 níveis de velocidade de ventiladores ajustáveis",
+    "url": "https://www.amazon.com.br/dp/B0B6SL5WZN",
+    "image_url": "https://m.media-amazon.com/images/I/713Lraes6BL._AC_UL320_.jpg",
+    "price_cents": 28799,
+    "rating": 3.7
+  }
+]

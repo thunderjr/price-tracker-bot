@@ -1,0 +1,5 @@
+.env
+data/
+ptb
+tracker.test
+browser.test
