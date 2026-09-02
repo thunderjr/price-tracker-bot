@@ -25,10 +25,13 @@ const statsWindow = 30 * 24 * time.Hour
 // pendingTTL is how long a prompted target-price reply stays expected.
 const pendingTTL = 5 * time.Minute
 
-// watchRow pairs a watch with its headline numbers.
+// watchRow pairs a watch with its headline numbers and its cheapest offer.
 type watchRow struct {
 	Watch store.Watch
 	Stats store.WatchStats
+	// Best is the cheapest tracked offer, carried so the detail view can show
+	// its payment options. Zero when the watch has found nothing yet.
+	Best store.WatchOffer
 }
 
 // Bot serves the Telegram front end.
@@ -321,7 +324,18 @@ func (b *Bot) loadRow(ctx context.Context, chatID, watchID int64) (watchRow, err
 	if err != nil {
 		return watchRow{}, err
 	}
-	return watchRow{Watch: *w, Stats: st}, nil
+
+	row := watchRow{Watch: *w, Stats: st}
+	if st.Products > 0 {
+		best, err := b.store.WatchOffers(ctx, w.ID, statsWindow, 1)
+		if err != nil {
+			return watchRow{}, err
+		}
+		if len(best) > 0 {
+			row.Best = best[0]
+		}
+	}
+	return row, nil
 }
 
 func (b *Bot) loadRows(ctx context.Context, chatID int64) ([]watchRow, error) {

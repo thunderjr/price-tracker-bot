@@ -275,9 +275,10 @@ func TestFormatDigestShowsInstallments(t *testing.T) {
 	offer := digestOffer("amazon", "PlayStation 5 Slim Digital", 418406, 0, 0)
 	offer.InstallmentCount = 10
 	offer.InstallmentEachCents = 44990
+	offer.InstallmentInterest = "sem juros"
 
 	got := formatDigest(store.Watch{Query: "ps5"}, nil, []store.WatchOffer{offer}, 1, nil)
-	if !strings.Contains(got, "ou 10x R$ 449,90") {
+	if !strings.Contains(got, "ou 10x R$ 449,90 sem juros") {
 		t.Errorf("installment line missing:\n%s", got)
 	}
 	if !strings.Contains(got, `total R$ 4\.499,00`) {
@@ -289,28 +290,102 @@ func TestFormatDigestShowsInstallments(t *testing.T) {
 }
 
 // No plan, or a single "instalment", means nothing to show.
-func TestInstallmentLineOmittedWhenAbsent(t *testing.T) {
+func TestInstallmentLinesOmittedWhenAbsent(t *testing.T) {
 	for name, o := range map[string]store.WatchOffer{
 		"no plan":     {PriceCents: 418406},
 		"one payment": {PriceCents: 418406, InstallmentCount: 1, InstallmentEachCents: 418406},
 		"zero amount": {PriceCents: 418406, InstallmentCount: 10},
 	} {
-		if got := installmentLine(o); got != "" {
-			t.Errorf("%s: installmentLine = %q, want empty", name, got)
+		if got := installmentLines(o); len(got) != 0 {
+			t.Errorf("%s: installmentLines = %v, want none", name, got)
 		}
 	}
 }
 
 // When the instalments add up to no more than the cash price there is no total
 // worth spelling out.
-func TestInstallmentLineOmitsRedundantTotal(t *testing.T) {
+func TestInstallmentLinesOmitRedundantTotal(t *testing.T) {
 	o := store.WatchOffer{PriceCents: 449900, InstallmentCount: 10, InstallmentEachCents: 44990}
-	got := installmentLine(o)
-	if !strings.Contains(got, "ou 10x R$ 449,90") {
-		t.Errorf("installmentLine = %q", got)
+	lines := installmentLines(o)
+	if len(lines) != 1 || !strings.Contains(lines[0], "ou 10x R$ 449,90") {
+		t.Fatalf("installmentLines = %v", lines)
 	}
-	if strings.Contains(got, "total") {
-		t.Errorf("installmentLine = %q, want no total when it equals the price", got)
+	if strings.Contains(lines[0], "total") {
+		t.Errorf("installmentLines = %v, want no total when it equals the price", lines)
+	}
+}
+
+// Both wordings are passed through as the site states them. A plan marked
+// "com juros" costs real money and must not be shown as if it were free.
+func TestInstallmentLinesCarryTheInterestWording(t *testing.T) {
+	for _, tc := range []struct {
+		interest string
+		want     string
+	}{
+		{"sem juros", "ou 10x R$ 449,90 sem juros"},
+		{"com juros", "ou 10x R$ 449,90 com juros"},
+		{"", "ou 10x R$ 449,90 \\(total"}, // unknown: stated as neither
+	} {
+		o := store.WatchOffer{
+			PriceCents:           418406,
+			InstallmentCount:     10,
+			InstallmentEachCents: 44990,
+			InstallmentInterest:  tc.interest,
+		}
+		lines := installmentLines(o)
+		if len(lines) != 1 || !strings.Contains(lines[0], tc.want) {
+			t.Errorf("interest %q: installmentLines = %v, want one containing %q", tc.interest, lines, tc.want)
+		}
+		if tc.interest == "" && strings.Contains(lines[0], "juros") {
+			t.Errorf("unknown interest claimed a wording: %v", lines)
+		}
+	}
+}
+
+// Mercado Livre's other-payment figure is a separate option and is listed too.
+func TestInstallmentLinesShowOtherMeans(t *testing.T) {
+	o := store.WatchOffer{
+		PriceCents:           519900,
+		InstallmentCount:     12,
+		InstallmentEachCents: 45999,
+		InstallmentInterest:  "sem juros",
+		OtherMeansCents:      549900,
+	}
+
+	lines := installmentLines(o)
+	if len(lines) != 2 {
+		t.Fatalf("installmentLines = %v, want the plan and the other-payment total", lines)
+	}
+	if !strings.Contains(lines[1], `R$ 5\.499,00 em outros meios`) {
+		t.Errorf("other-payment line = %q", lines[1])
+	}
+
+	// Not worth a line when it is not actually more than the price.
+	o.OtherMeansCents = 519900
+	if got := installmentLines(o); len(got) != 1 {
+		t.Errorf("installmentLines = %v, want the other-payment line dropped", got)
+	}
+}
+
+// The detail view has to answer "what would this cost me" without a second tap.
+func TestFormatDetailShowsPaymentOptions(t *testing.T) {
+	row := watchRow{
+		Watch: store.Watch{ID: 1, Query: "ps5 slim", Active: true},
+		Stats: store.WatchStats{Products: 14, BestCents: 418406},
+		Best: store.WatchOffer{
+			PriceCents:           418406,
+			InstallmentCount:     10,
+			InstallmentEachCents: 44990,
+			InstallmentInterest:  "sem juros",
+		},
+	}
+
+	got := formatDetail(row)
+	if !strings.Contains(got, "ou 10x R$ 449,90 sem juros") {
+		t.Errorf("detail view omits the payment options:\n%s", got)
+	}
+	if bad := unescapedOutsideLinks(t, got); len(bad) > 0 {
+		t.Errorf("unescaped MarkdownV2 characters %v in:\n%s", bad, got)
 	}
 }
 

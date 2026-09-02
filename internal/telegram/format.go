@@ -96,7 +96,7 @@ func formatDigest(w store.Watch, alerts []tracker.Alert, offers []store.WatchOff
 			fmt.Fprintf(&b, " · mín 30d %s", money(o.LowCents))
 		}
 		b.WriteString("\n")
-		if inst := installmentLine(o); inst != "" {
+		for _, inst := range installmentLines(o) {
 			fmt.Fprintf(&b, "%s\n", inst)
 		}
 		fmt.Fprintf(&b, "%s\n\n", link(truncate(o.Title, 64), o.URL))
@@ -242,6 +242,11 @@ func formatDetail(r watchRow) string {
 		b.WriteString("_Ainda sem ofertas registradas\\._\n")
 	} else {
 		fmt.Fprintf(&b, "Melhor agora: *%s*\n", money(r.Stats.BestCents))
+		// The payment options for the cheapest offer, so the detail view
+		// answers "what would this actually cost me" without a second tap.
+		for _, inst := range installmentLines(r.Best) {
+			fmt.Fprintf(&b, "%s\n", inst)
+		}
 		if r.Stats.LowCents > 0 && r.Stats.LowCents < r.Stats.BestCents {
 			fmt.Fprintf(&b, "Mínimo 30d: %s\n", money(r.Stats.LowCents))
 		}
@@ -272,22 +277,36 @@ func scanAge(t time.Time) string {
 	}
 }
 
-// installmentLine renders the financing offer, e.g. "ou 10x R$ 449,90".
+// installmentLines renders every payment option the listing publishes: the
+// financing plan with the site's own juros wording and what it adds up to,
+// and separately what Mercado Livre quotes for paying another way.
 //
-// The total is spelled out because it is what the instalments actually cost,
-// and it is usually more than the cash price shown above it -- the gap between
-// the two is a payment-method difference, not a discount.
-func installmentLine(o store.WatchOffer) string {
-	if o.InstallmentCount < 2 || o.InstallmentEachCents <= 0 {
-		return ""
+// The interest wording is passed through rather than assumed. A plan marked
+// "com juros" genuinely costs more -- "em até 12x de R$ 11,08 com juros" on a
+// R$ 118,72 item comes to R$ 132,96 -- and a plan that says nothing either way
+// is shown without a claim.
+func installmentLines(o store.WatchOffer) []string {
+	var out []string
+
+	if o.InstallmentCount > 1 && o.InstallmentEachCents > 0 {
+		line := fmt.Sprintf("ou %dx %s", o.InstallmentCount, money(o.InstallmentEachCents))
+		if o.InstallmentInterest != "" {
+			line += " " + esc(o.InstallmentInterest)
+		}
+
+		// The total is what the instalments come to, and it is usually more
+		// than the cash price above them.
+		total := int64(o.InstallmentCount) * o.InstallmentEachCents
+		if total > o.PriceCents {
+			line += fmt.Sprintf(" \\(total %s\\)", money(total))
+		}
+		out = append(out, "_"+line+"_")
 	}
 
-	total := int64(o.InstallmentCount) * o.InstallmentEachCents
-	line := fmt.Sprintf("_ou %dx %s", o.InstallmentCount, money(o.InstallmentEachCents))
-	if total > o.PriceCents {
-		line += fmt.Sprintf(" \\(total %s\\)", money(total))
+	if o.OtherMeansCents > o.PriceCents {
+		out = append(out, fmt.Sprintf("_ou %s em outros meios_", money(o.OtherMeansCents)))
 	}
-	return line + "_"
+	return out
 }
 
 func discount(price, list int64) int {
