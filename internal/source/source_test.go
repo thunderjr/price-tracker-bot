@@ -92,32 +92,46 @@ func TestDiscount(t *testing.T) {
 
 func TestParseInstallments(t *testing.T) {
 	for _, tc := range []struct {
-		in    string
-		count int
-		each  int64
-		total int64
+		in   string
+		want InstallmentPlan
 	}{
 		// Amazon
-		{"em até 10x de R$ 449,90 sem juros", 10, 44990, 0},
-		{"em até 12x de R$ 383,32 sem juros", 12, 38332, 0},
+		{"em até 10x de R$ 449,90 sem juros", InstallmentPlan{Count: 10, Each: 44990, Interest: InterestFree}},
+		{"em até 12x de R$ 383,32 sem juros", InstallmentPlan{Count: 12, Each: 38332, Interest: InterestFree}},
+		// Interest is stated, and costs real money: 12 x 11,08 is R$ 132,96
+		// on an item priced R$ 118,72.
+		{"em até 12x de R$ 11,08 com juros", InstallmentPlan{Count: 12, Each: 1108, Interest: InterestCharged}},
 		// Mercado Livre
-		{"12x R$ 459,99 sem juros", 12, 45999, 0},
-		// The same, with the "de" Mercado Livre sometimes writes. Missing it
-		// left the plan unparsed, and the struck total then read as a
-		// discount that never expires.
-		{"12x de R$ 459,99 sem juros", 12, 45999, 0},
-		{"ou R$ 4.599,90 em 10x R$ 459,99 sem juros", 10, 45999, 459990},
-		{"ou R$ 5.499 em outros meios", 0, 0, 549900},
-		{"ou R$ 749 em outros meios", 0, 0, 74900},
+		{"12x R$ 459,99 sem juros", InstallmentPlan{Count: 12, Each: 45999, Interest: InterestFree}},
+		{"12x de R$ 459,99 sem juros", InstallmentPlan{Count: 12, Each: 45999, Interest: InterestFree}},
+		{
+			"ou R$ 4.599,90 em 10x R$ 459,99 sem juros",
+			InstallmentPlan{Count: 10, Each: 45999, Total: 459990, Interest: InterestFree},
+		},
+		// The other-payment figure is its own thing, not a plan.
+		{"ou R$ 5.499 em outros meios", InstallmentPlan{OtherMeansCents: 549900}},
+		{"ou R$ 749 em outros meios", InstallmentPlan{OtherMeansCents: 74900}},
+		// No wording means unknown, never assumed free.
+		{"10x R$ 449,90", InstallmentPlan{Count: 10, Each: 44990, Interest: InterestUnknown}},
 		// Nothing to read
-		{"", 0, 0, 0},
-		{"frete grátis", 0, 0, 0},
+		{"", InstallmentPlan{}},
+		{"frete grátis", InstallmentPlan{}},
 	} {
-		got := ParseInstallments(tc.in)
-		if got.Count != tc.count || got.Each != tc.each || got.Total != tc.total {
-			t.Errorf("ParseInstallments(%q) = {count:%d each:%d total:%d}, want {count:%d each:%d total:%d}",
-				tc.in, got.Count, got.Each, got.Total, tc.count, tc.each, tc.total)
+		if got := ParseInstallments(tc.in); got != tc.want {
+			t.Errorf("ParseInstallments(%q) = %+v, want %+v", tc.in, got, tc.want)
 		}
+	}
+}
+
+// A financed total shown as a struck-through "was" price has to be recognized
+// whichever way the site quotes it.
+func TestIsInstallmentTotalCoversOtherMeans(t *testing.T) {
+	plan := ParseInstallments("ou R$ 5.499 em outros meios")
+	if !plan.IsInstallmentTotal(549900) {
+		t.Error("the other-payment total was not recognized as one")
+	}
+	if plan.IsInstallmentTotal(519900) {
+		t.Error("an unrelated figure matched the other-payment total")
 	}
 }
 
@@ -169,5 +183,53 @@ func TestIsInstallmentTotal(t *testing.T) {
 	}
 	if amazon.IsInstallmentTotal(0) {
 		t.Error("claimed a match against a zero price")
+	}
+}
+
+// Mercado Livre writes "sem juros" only when a plan is interest-free and says
+// nothing at all when it is not, so silence plus a total above the cash price
+// is interest. Showing that plan unlabelled reads as if it were free.
+func TestResolveInterestFromArithmetic(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		plan  InstallmentPlan
+		price int64
+		want  Interest
+	}{{
+		name:  "unlabelled plan costing more is charging interest",
+		plan:  InstallmentPlan{Count: 12, Each: 44200},
+		price: 459900, // 12x442,00 = 5.304,00
+		want:  InterestCharged,
+	}, {
+		name:  "cent rounding is not interest",
+		plan:  InstallmentPlan{Count: 10, Each: 45999},
+		price: 459900, // 10x459,99 = 4.599,90
+		want:  InterestUnknown,
+	}, {
+		name:  "a stated wording is never overridden",
+		plan:  InstallmentPlan{Count: 12, Each: 44200, Interest: InterestFree},
+		price: 459900,
+		want:  InterestFree,
+	}, {
+		name:  "instalments at or below the cash price stay unknown",
+		plan:  InstallmentPlan{Count: 10, Each: 41840},
+		price: 418406,
+		want:  InterestUnknown,
+	}, {
+		name:  "a single payment is not a plan",
+		plan:  InstallmentPlan{Count: 1, Each: 999900},
+		price: 418406,
+		want:  InterestUnknown,
+	}, {
+		name:  "no price to compare against",
+		plan:  InstallmentPlan{Count: 12, Each: 44200},
+		price: 0,
+		want:  InterestUnknown,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.plan.ResolveInterest(tc.price).Interest; got != tc.want {
+				t.Errorf("ResolveInterest(%d) = %q, want %q", tc.price, got, tc.want)
+			}
+		})
 	}
 }

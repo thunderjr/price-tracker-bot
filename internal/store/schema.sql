@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS price_points (
     site_flags       TEXT    NOT NULL DEFAULT '',
     installment_count      INTEGER NOT NULL DEFAULT 0,
     installment_each_cents INTEGER NOT NULL DEFAULT 0,
+    installment_interest   TEXT    NOT NULL DEFAULT '',
+    other_means_cents      INTEGER NOT NULL DEFAULT 0,
     seen_at          TEXT    NOT NULL
 );
 

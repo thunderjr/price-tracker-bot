@@ -238,7 +238,8 @@ func parseResult(sel *goquery.Selection) (source.Offer, bool) {
 	listCents := source.ParseBRL(
 		sel.Find(`[data-cy="price-recipe"] .a-text-price[data-a-strike="true"] > .a-offscreen`).First().Text())
 
-	plan := source.ParseInstallments(text(sel.Find(`[data-cy="price-recipe"]`).First()))
+	plan := source.ParseInstallments(
+		text(sel.Find(`[data-cy="price-recipe"]`).First())).ResolveInterest(priceCents)
 	if plan.IsInstallmentTotal(listCents) {
 		// Not a former price: the same item paid in instalments. Keeping it
 		// would post a discount that never expires.

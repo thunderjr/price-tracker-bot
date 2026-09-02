@@ -204,7 +204,7 @@ func (r rawOffer) toOffer() (source.Offer, bool) {
 	// instalments -- "ou R$ 4.599,90 em 10x R$ 459,99" -- and ten times
 	// 459,99 is 4.599,90. Reporting that as a discount would mark almost
 	// every listing permanently on sale.
-	plan := source.ParseInstallments(r.Installments)
+	plan := source.ParseInstallments(r.Installments).ResolveInterest(price)
 	list := source.ParseBRL(r.ListPrice)
 	if plan.IsInstallmentTotal(list) {
 		list = 0

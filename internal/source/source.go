@@ -156,11 +156,31 @@ const (
 	installmentToleranceDen = 1000
 )
 
+// Interest says what a listing claims about the cost of financing. Both
+// marketplaces state it in words next to the plan, and the difference is real
+// money: "em até 12x de R$ 11,08 com juros" on a R$ 118,72 item comes to
+// R$ 132,96.
+type Interest string
+
+const (
+	InterestUnknown Interest = ""
+	InterestFree    Interest = "sem juros"
+	InterestCharged Interest = "com juros"
+)
+
 // InstallmentPlan is a listing's financing offer, parsed from free text.
+//
+// A listing publishes at most one plan -- the longest it will grant, which is
+// what "em até 12x" means -- so this is a single plan rather than a list.
 type InstallmentPlan struct {
-	Count int   // number of instalments, 0 when unstated
-	Each  int64 // cents per instalment
-	Total int64 // cents for the whole plan, when stated outright
+	Count    int      // number of instalments, 0 when unstated
+	Each     int64    // cents per instalment
+	Total    int64    // cents for the whole plan, when stated outright
+	Interest Interest // what the listing says about interest, if anything
+	// OtherMeansCents is what Mercado Livre quotes for paying another way
+	// ("ou R$ 5.499 em outros meios"). Higher than the headline price, and a
+	// frequent source of fake "was" prices.
+	OtherMeansCents int64
 }
 
 // TotalCents is what the plan costs in total.
@@ -184,7 +204,31 @@ func (p InstallmentPlan) TotalCents() int64 {
 // Reading it as a former price invents a discount that never expires, on
 // nearly every listing, and buries the real ones.
 func (p InstallmentPlan) IsInstallmentTotal(cents int64) bool {
-	total := p.TotalCents()
+	return within(cents, p.TotalCents()) || within(cents, p.OtherMeansCents)
+}
+
+// ResolveInterest fills in the wording a listing left out, using its own
+// arithmetic. Mercado Livre prints "sem juros" only when the plan really is
+// free and writes nothing at all otherwise, so instalments adding up to more
+// than the cash price are charging interest whatever the card says. A stated
+// wording is never overridden, and the tolerance keeps cent-rounding
+// ("10x R$ 459,99" against a R$ 4.599,00 price) from being read as interest.
+//
+// The inference only ever moves a plan from unknown to "com juros", so the
+// worst it can do is overstate what a plan costs -- never hide it.
+func (p InstallmentPlan) ResolveInterest(priceCents int64) InstallmentPlan {
+	if p.Count <= 1 || p.Interest != InterestUnknown || priceCents <= 0 {
+		return p
+	}
+	if total := p.TotalCents(); total > priceCents && !within(total, priceCents) {
+		p.Interest = InterestCharged
+	}
+	return p
+}
+
+// within reports whether cents is the same figure as total, allowing for the
+// rounding both sites apply when they display a total.
+func within(cents, total int64) bool {
 	if total <= 0 || cents <= 0 {
 		return false
 	}
@@ -212,6 +256,8 @@ var (
 	// "ou R$ 5.499 em outros meios" states a total outright.
 	otherMeansRe = regexp.MustCompile(
 		`(?i)ou\s+R\$\s*([\d.]+(?:,\d{1,2})?)\s*(?:em\s+)?outros\s+meios`)
+	// The juros wording trails the plan it describes.
+	interestRe = regexp.MustCompile(`(?i)\b(sem|com)\s+juros\b`)
 )
 
 // ParseInstallments reads a marketplace's financing line. It handles the forms
@@ -228,9 +274,10 @@ func ParseInstallments(text string) InstallmentPlan {
 	}
 	text = strings.Join(strings.Fields(text), " ")
 
+	// Mercado Livre's other-payment figure sits in the same line as the plan
+	// on some cards and alone on others, so read it first and keep going.
 	if m := otherMeansRe.FindStringSubmatch(text); m != nil {
-		plan.Total = ParseBRL(m[1])
-		return plan
+		plan.OtherMeansCents = ParseBRL(m[1])
 	}
 
 	if m := installmentRe.FindStringSubmatch(text); m != nil {
@@ -239,14 +286,29 @@ func ParseInstallments(text string) InstallmentPlan {
 		}
 		plan.Each = ParseBRL(m[3])
 		plan.Total = ParseBRL(m[1]) // empty group parses to 0
-		return plan
-	}
-
-	if m := bareInstallmentRe.FindStringSubmatch(text); m != nil {
+	} else if m := bareInstallmentRe.FindStringSubmatch(text); m != nil {
 		if n, err := strconv.Atoi(m[1]); err == nil && n > 1 {
 			plan.Count = n
 		}
 		plan.Each = ParseBRL(m[2])
 	}
+
+	if plan.Count > 0 {
+		plan.Interest = parseInterest(text)
+	}
 	return plan
+}
+
+// parseInterest reads the juros wording. Absent wording stays unknown rather
+// than being assumed interest-free: presenting a financed total as if it cost
+// nothing extra is the more expensive mistake.
+func parseInterest(text string) Interest {
+	m := interestRe.FindStringSubmatch(text)
+	if m == nil {
+		return InterestUnknown
+	}
+	if strings.EqualFold(m[1], "sem") {
+		return InterestFree
+	}
+	return InterestCharged
 }

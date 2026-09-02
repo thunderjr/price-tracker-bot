@@ -448,6 +448,8 @@ func (t *Tracker) record(ctx context.Context, w store.Watch, o source.Offer, now
 			SiteFlags:            o.SiteFlags,
 			InstallmentCount:     o.Installments.Count,
 			InstallmentEachCents: o.Installments.Each,
+			InstallmentInterest:  string(o.Installments.Interest),
+			OtherMeansCents:      o.Installments.OtherMeansCents,
 			SeenAt:               now,
 		}
 		if err := t.store.AddPricePoint(ctx, point); err != nil {

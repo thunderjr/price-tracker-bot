@@ -30,6 +30,8 @@ var migrations = []string{
 	`ALTER TABLE watches ADD COLUMN notified_best_cents INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE price_points ADD COLUMN installment_count INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE price_points ADD COLUMN installment_each_cents INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE price_points ADD COLUMN installment_interest TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE price_points ADD COLUMN other_means_cents INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE watch_products ADD COLUMN miss_count INTEGER NOT NULL DEFAULT 0`,
 	// The alert cooldown became per (watch, product), so its index gained
 	// watch_id. An existing database still carries the two-column version
@@ -89,10 +91,13 @@ type PricePoint struct {
 	PriceCents     int64
 	ListPriceCents int64
 	SiteFlags      []string
-	// InstallmentCount and InstallmentEachCents are the financing offer as
-	// advertised. Stored per observation because it moves with the price.
+	// The financing offer as advertised, stored per observation because it
+	// moves with the price. InstallmentInterest carries the site's own words
+	// ("sem juros"/"com juros"), empty when it said nothing.
 	InstallmentCount     int
 	InstallmentEachCents int64
+	InstallmentInterest  string
+	OtherMeansCents      int64
 	SeenAt               time.Time
 }
 
@@ -386,10 +391,12 @@ func (s *Store) UnlinkWatchProduct(ctx context.Context, watchID, productID int64
 func (s *Store) AddPricePoint(ctx context.Context, p PricePoint) error {
 	return s.exec(ctx, "add price point", `
 		INSERT INTO price_points (product_id, price_cents, list_price_cents, site_flags,
-		                          installment_count, installment_each_cents, seen_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		                          installment_count, installment_each_cents, installment_interest,
+		                          other_means_cents, seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ProductID, p.PriceCents, p.ListPriceCents, strings.Join(p.SiteFlags, "|"),
-		p.InstallmentCount, p.InstallmentEachCents, formatTime(p.SeenAt))
+		p.InstallmentCount, p.InstallmentEachCents, p.InstallmentInterest,
+		p.OtherMeansCents, formatTime(p.SeenAt))
 }
 
 // PriceHistory returns a product's observations since a cutoff, oldest first.
@@ -402,7 +409,8 @@ func (s *Store) PriceHistory(ctx context.Context, productID int64, since time.Ti
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT product_id, price_cents, list_price_cents, site_flags,
-		       COALESCE(installment_count, 0), COALESCE(installment_each_cents, 0), seen_at
+		       COALESCE(installment_count, 0), COALESCE(installment_each_cents, 0),
+		       COALESCE(installment_interest, ''), COALESCE(other_means_cents, 0), seen_at
 		FROM price_points
 		WHERE product_id = ? AND (? = '' OR seen_at >= ?)
 		ORDER BY seen_at, id`, productID, cutoff, cutoff)
@@ -429,7 +437,8 @@ func scanPricePoint(row rowScanner) (PricePoint, error) {
 		seen  string
 	)
 	if err := row.Scan(&p.ProductID, &p.PriceCents, &p.ListPriceCents, &flags,
-		&p.InstallmentCount, &p.InstallmentEachCents, &seen); err != nil {
+		&p.InstallmentCount, &p.InstallmentEachCents, &p.InstallmentInterest,
+		&p.OtherMeansCents, &seen); err != nil {
 		return PricePoint{}, err
 	}
 	if flags != "" {
@@ -480,10 +489,11 @@ type WatchOffer struct {
 	PriceCents     int64
 	ListPriceCents int64
 	SiteFlags      []string
-	// InstallmentCount and InstallmentEachCents are the financing offer as
-	// advertised for this price.
+	// The financing offer as advertised for this price.
 	InstallmentCount     int
 	InstallmentEachCents int64
+	InstallmentInterest  string
+	OtherMeansCents      int64
 	SeenAt               time.Time
 	LowCents             int64 // lowest price recorded in the trailing window
 }
@@ -494,7 +504,8 @@ func (s *Store) WatchOffers(ctx context.Context, watchID int64, window time.Dura
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.id, p.source, p.external_id, p.title, p.url, p.image_url, p.seller, p.international,
 		       lp.price_cents, lp.list_price_cents, lp.site_flags,
-		       COALESCE(lp.installment_count, 0), COALESCE(lp.installment_each_cents, 0), lp.seen_at,
+		       COALESCE(lp.installment_count, 0), COALESCE(lp.installment_each_cents, 0),
+		       COALESCE(lp.installment_interest, ''), COALESCE(lp.other_means_cents, 0), lp.seen_at,
 		       COALESCE((SELECT MIN(price_cents) FROM price_points
 		                 WHERE product_id = p.id AND seen_at >= ?), lp.price_cents)
 		FROM watch_products wp
@@ -521,7 +532,8 @@ func (s *Store) WatchOffers(ctx context.Context, watchID int64, window time.Dura
 		)
 		if err := rows.Scan(&o.ID, &o.Source, &o.ExternalID, &o.Title, &o.URL, &o.ImageURL, &o.Seller, &intl,
 			&o.PriceCents, &o.ListPriceCents, &flags,
-			&o.InstallmentCount, &o.InstallmentEachCents, &seen, &o.LowCents); err != nil {
+			&o.InstallmentCount, &o.InstallmentEachCents, &o.InstallmentInterest,
+			&o.OtherMeansCents, &seen, &o.LowCents); err != nil {
 			return nil, fmt.Errorf("store: scan watch offer: %w", err)
 		}
 		o.International = intl != 0
