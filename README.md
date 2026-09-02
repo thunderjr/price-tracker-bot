@@ -159,6 +159,12 @@ user knows whether the leftovers are noise:
 
 With `min 3000`, all 36 junk listings go and all 23 consoles stay.
 
+**Automatic: listings that went away.** A watch stops following a listing once
+three consecutive scans of a source that *answered* came back without it.
+Absence during a block proves nothing, and the tail of a search page shifts
+between requests — but a delisted offer left in place goes on being the watch's
+best price for months.
+
 ### Why there is no automatic price filter
 
 It is the obvious idea and it does not work. `lego millennium falcon`
@@ -208,7 +214,7 @@ PlayStation®5 Slim Digital 825GB
 |---|---|---|
 | `best_drop` / `best_rise` | the watch's cheapest offer moves more than `BEST_MOVE_THRESHOLD` since you were last told | high |
 | `drop_vs_median` | price is `DROP_THRESHOLD` below its own 30-day median (≥5 points) | high |
-| `new_low` | price matches or beats the lowest ever recorded | high |
+| `new_low` | price beats the lowest ever recorded, or comes back down to it | high |
 | `target` | price crosses the target you set | high |
 | `site_flag` | the listing starts advertising a promotion | **low** — flagged as such in the message |
 
@@ -221,6 +227,10 @@ adds up, and a price flapping between two values does not notify twice.
 The four rules below them require 12 hours of history and at least 3
 observations. Without that, a watch's second scan declares half the catalogue a
 record low — which is exactly what happened once, as 56 notifications.
+
+`new_low` needs the price to have moved: an unchanged price is trivially its
+own lowest ever, and with a daily heartbeat point in the history a flat watch
+would announce a fresh record every time the cooldown lapsed.
 
 The median, not the mean, is the baseline: one spike or one flash sale in the
 history must not manufacture a fake drop. `site_flag` is reported as low

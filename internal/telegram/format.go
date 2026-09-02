@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,7 +31,13 @@ func sourceLabel(name string) string {
 
 // esc escapes text for MarkdownV2, which treats a long list of punctuation as
 // markup. Product titles are full of it.
-func esc(s string) string { return tgbot.EscapeMarkdown(s) }
+//
+// The backslash is doubled first because EscapeMarkdown leaves it alone: a
+// title carrying one would otherwise escape whatever character followed it,
+// breaking a link or costing the whole message.
+func esc(s string) string {
+	return tgbot.EscapeMarkdown(strings.ReplaceAll(s, `\`, `\\`))
+}
 
 // link renders a MarkdownV2 inline link.
 func link(text, url string) string {
@@ -121,7 +128,16 @@ func summarize(alerts []tracker.Alert) string {
 		}
 	}
 
-	line := esc(tracker.Describe(best.Candidate)) + " — " + esc(truncate(best.Product.Title, 46))
+	// The listing named in the headline is not necessarily one of the three
+	// cheapest offers listed below, so link it here: otherwise the message
+	// announces a price with no way to reach it.
+	name := truncate(best.Product.Title, 46)
+	title := esc(name)
+	if best.Product.URL != "" {
+		title = link(name, best.Product.URL)
+	}
+
+	line := esc(tracker.Describe(best.Candidate)) + " — " + title
 	if n := len(alerts) - 1; n > 0 {
 		line += fmt.Sprintf("\n_e mais %d %s_", n, plural(n, "alerta", "alertas"))
 	}
@@ -289,7 +305,12 @@ func truncate(s string, n int) string {
 	return strings.TrimSpace(string(r[:n-1])) + "…"
 }
 
-const helpText = `*Price Tracker*
+// helpText renders /help. The movement threshold it quotes is configurable,
+// so the number has to come from the config rather than be written into the
+// text and drift away from it.
+func helpText(bestMoveThreshold float64) string {
+	pct := esc(strconv.FormatFloat(bestMoveThreshold*100, 'f', -1, 64))
+	return `*Price Tracker*
 
 Rastreia preços e promoções no Mercado Livre e na Amazon BR\.
 
@@ -320,12 +341,13 @@ separados, o bot oferece o filtro em um toque\.
 *Alertas*
 
 Você recebe uma mensagem quando o melhor preço de uma busca sobe ou desce
-mais de 1%, e também quando: cai bem abaixo da mediana de 30 dias, bate o
-menor preço já registrado, atinge seu alvo, ou o anúncio passa a marcar
-promoção\.
+mais de ` + pct + `%, e também quando: cai bem abaixo da mediana de 30 dias,
+bate o menor preço já registrado, atinge seu alvo, ou o anúncio passa a
+marcar promoção\.
 
 Descontos anunciados são conferidos: quando o valor riscado é só o mesmo
 produto parcelado \(10x R$ 449,90 \= R$ 4\.499\), não conta como promoção\.`
+}
 
 func bold(s string) string { return "*" + esc(s) + "*" }
 

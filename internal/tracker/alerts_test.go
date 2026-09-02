@@ -87,9 +87,29 @@ func TestEvaluateNewLow(t *testing.T) {
 	if has(r.Evaluate(source.Offer{PriceCents: 470000}, h, 0, now), KindNewLow) {
 		t.Error("new_low fired above the previous low")
 	}
-	// Matching the previous low counts: it is still the best price on record.
-	if !has(r.Evaluate(source.Offer{PriceCents: 460000}, h, 0, now), KindNewLow) {
-		t.Error("new_low did not fire on a tie with the previous low")
+	// The last observation in h is itself the low, so matching it is a price
+	// that has not moved -- not a record.
+	if has(r.Evaluate(source.Offer{PriceCents: 460000}, h, 0, now), KindNewLow) {
+		t.Error("new_low fired on a price that had simply not moved")
+	}
+	// Coming back down to the floor after a rise is a genuine record match.
+	rebound := history(460000, 480000, 490000)
+	if !has(r.Evaluate(source.Offer{PriceCents: 460000}, rebound, 0, now), KindNewLow) {
+		t.Error("new_low did not fire on a return to the record low")
+	}
+}
+
+// A watch whose price never moves used to headline a digest every day with
+// "menor preço já registrado (antes R$ 5.000,00)" for R$ 5.000,00: the daily
+// heartbeat point turns the unchanged price into its own record, and the
+// 24h cooldown then lets it say so again tomorrow.
+func TestEvaluateFlatPriceIsNoRecordLow(t *testing.T) {
+	r := DefaultRules(0.10, 0.01)
+	flat := history(500000, 500000, 500000, 500000, 500000)
+
+	got := r.Evaluate(source.Offer{PriceCents: 500000}, flat, 0, now)
+	if has(got, KindNewLow) {
+		t.Errorf("an unchanged price was announced as a record low: %v", kinds(got))
 	}
 }
 
@@ -159,7 +179,7 @@ func TestEvaluateMedianWindowExcludesOldPoints(t *testing.T) {
 
 func TestEvaluateSiteFlag(t *testing.T) {
 	r := DefaultRules(0.10, 0.01)
-	plain := []store.PricePoint{{PriceCents: 500000, SeenAt: now.AddDate(0, 0, -1)}}
+	plain := history(500000, 500000, 500000)
 
 	offer := source.Offer{PriceCents: 490000, ListPriceCents: 600000, SiteFlags: []string{"18% OFF"}}
 	c := get(t, r.Evaluate(offer, plain, 0, now), KindSiteFlag)
@@ -174,16 +194,32 @@ func TestEvaluateSiteFlag(t *testing.T) {
 // A promotion that was already advertised last time is not news.
 func TestEvaluateSiteFlagOnlyOnTransition(t *testing.T) {
 	r := DefaultRules(0.10, 0.01)
-	promoted := []store.PricePoint{{
-		PriceCents:     500000,
-		ListPriceCents: 600000,
-		SiteFlags:      []string{"18% OFF"},
-		SeenAt:         now.AddDate(0, 0, -1),
-	}}
+	promoted := make([]store.PricePoint, 3)
+	for i := range promoted {
+		promoted[i] = store.PricePoint{
+			PriceCents:     500000,
+			ListPriceCents: 600000,
+			SiteFlags:      []string{"18% OFF"},
+			SeenAt:         now.AddDate(0, 0, i-3),
+		}
+	}
 
 	offer := source.Offer{PriceCents: 500000, ListPriceCents: 600000, SiteFlags: []string{"18% OFF"}}
 	if has(r.Evaluate(offer, promoted, 0, now), KindSiteFlag) {
 		t.Error("site_flag re-fired on an unchanged promotion")
+	}
+}
+
+// Two sightings are not a history. Every rule that compares against our own
+// record waits for three, or a watch's second scan calls half the catalogue
+// news -- which is exactly what once produced 56 notifications in one go.
+func TestEvaluateSiteFlagNeedsEnoughHistory(t *testing.T) {
+	r := DefaultRules(0.10, 0.01)
+	seenTwice := history(500000, 500000)
+
+	offer := source.Offer{PriceCents: 490000, ListPriceCents: 600000, SiteFlags: []string{"18% OFF"}}
+	if got := r.Evaluate(offer, seenTwice, 0, now); len(got) != 0 {
+		t.Errorf("fired on %d observations: %v", len(seenTwice), kinds(got))
 	}
 }
 
@@ -230,6 +266,19 @@ func TestDescribe(t *testing.T) {
 		if got := Describe(c); got == "" || got == string(c.Kind) {
 			t.Errorf("Describe(%s) = %q", c.Kind, got)
 		}
+	}
+}
+
+// The message must name the window the median actually used, not a constant
+// that goes stale the moment the rules change.
+func TestDescribeNamesTheMedianWindow(t *testing.T) {
+	r := DefaultRules(0.10, 0.01)
+	r.MedianWindow = 7 * 24 * time.Hour
+	r.MinPoints = 3
+
+	got := r.Evaluate(source.Offer{PriceCents: 400000}, history(500000, 500000, 500000), 0, now)
+	if desc := Describe(get(t, got, KindDropVsMedian)); !strings.Contains(desc, "7 dias") {
+		t.Errorf("Describe = %q, want the 7 day window named", desc)
 	}
 }
 

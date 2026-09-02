@@ -81,8 +81,9 @@ func (s *Source) Name() string { return Name }
 
 // Search returns the first page of results for query.
 //
-// Amazon throttles bursts with a captcha that clears on its own, so a block is
-// retried once after a pause with a different User-Agent before giving up.
+// Amazon throttles bursts with a captcha that clears on its own, so throttling
+// is waited out -- one backoff per entry in retryBackoff, each with a different
+// User-Agent -- before giving up.
 func (s *Source) Search(ctx context.Context, query string) ([]source.Offer, error) {
 	offers, err := s.search(ctx, query)
 	for _, wait := range retryBackoff {
@@ -161,25 +162,37 @@ func Parse(html string) ([]source.Offer, error) {
 		return nil, fmt.Errorf("amazon: parse html: %w", err)
 	}
 
-	var offers []source.Offer
+	var (
+		offers []source.Offer
+		cards  int
+	)
 	doc.Find(`div[data-component-type="s-search-result"]`).Each(func(_ int, sel *goquery.Selection) {
+		cards++
 		if o, ok := parseResult(sel); ok {
 			offers = append(offers, o)
 		}
 	})
 
-	if len(offers) == 0 && !containsAny(html, noResultsMarkers) {
-		// No result cards and no "nothing matched" notice, so this is not an
-		// empty result set. Amazon's throttle page is a couple of kilobytes
-		// and carries no title; anything substantial is a page we should be
-		// able to parse and no longer can, which is a parser problem rather
-		// than a rate limit.
-		if len(html) < throttlePageBytes {
-			return nil, source.ErrThrottled
-		}
-		return nil, source.ErrBlocked
+	if len(offers) > 0 {
+		return offers, nil
 	}
-	return offers, nil
+
+	// A page full of result cards none of which carry a price is a real
+	// answer: everything matching is "Ver opções de compra" with no offer of
+	// its own. Calling that blocked would report "Sem resposta de: Amazon" and
+	// send the scan looking for a fault that is not there.
+	if cards > 0 || containsAny(html, noResultsMarkers) {
+		return nil, nil
+	}
+
+	// No cards and no "nothing matched" notice, so this is not an empty result
+	// set. Amazon's throttle page is a couple of kilobytes and carries no
+	// title; anything substantial is a page we should be able to parse and no
+	// longer can, which is a parser problem rather than a rate limit.
+	if len(html) < throttlePageBytes {
+		return nil, source.ErrThrottled
+	}
+	return nil, source.ErrBlocked
 }
 
 var titleRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)

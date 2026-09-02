@@ -319,7 +319,10 @@ func (b *Bot) scanFromButton(ctx context.Context, queryID string, chatID int64, 
 		b.answer(ctx, queryID, "Busca não encontrada.")
 		return
 	}
-	if !b.beginScan(watchID) {
+	// The lock that actually decides this lives in the tracker, since the
+	// scheduler has to share it; this is only so the user hears why nothing
+	// happened instead of watching a spinner.
+	if b.tracker.ScanInProgress(watchID) {
 		b.answer(ctx, queryID, "Essa busca já está sendo escaneada.")
 		return
 	}
@@ -331,14 +334,14 @@ func (b *Bot) scanFromButton(ctx context.Context, queryID string, chatID int64, 
 	// A scan drives a real browser and can take a minute. Detaching keeps the
 	// update loop responsive, and it must not inherit the update's context.
 	go func() {
-		defer b.endScan(watchID)
-
 		bg, cancel := context.WithTimeout(context.Background(), scanTimeout)
 		defer cancel()
 
 		alerts := b.runScan(bg, watchID)
 		b.showDetail(bg, chatID, messageID, watchID, page)
-		b.Deliver(bg, alerts)
+		if err := b.Deliver(bg, alerts); err != nil {
+			b.log.Error("deliver alerts failed", "watch", watchID, "err", err)
+		}
 	}()
 }
 
@@ -368,12 +371,10 @@ func (b *Bot) scanAllFromButton(ctx context.Context, queryID string, chatID int6
 		defer cancel()
 
 		for _, w := range active {
-			if !b.beginScan(w.ID) {
-				continue
-			}
 			alerts := b.runScan(bg, w.ID)
-			b.endScan(w.ID)
-			b.Deliver(bg, alerts)
+			if err := b.Deliver(bg, alerts); err != nil {
+				b.log.Error("deliver alerts failed", "watch", w.ID, "err", err)
+			}
 		}
 		b.showList(bg, chatID, messageID, page)
 	}()
@@ -388,6 +389,10 @@ func (b *Bot) runScan(ctx context.Context, watchID int64) []tracker.Alert {
 	}
 
 	res, err := b.tracker.Scan(ctx, *w)
+	if errors.Is(err, tracker.ErrScanInProgress) {
+		b.log.Info("scan skipped, watch already being scanned", "watch", watchID)
+		return nil
+	}
 	if err != nil {
 		b.log.Error("scan failed", "watch", watchID, "query", w.Query, "err", err)
 		return nil
@@ -400,11 +405,6 @@ func (b *Bot) runScan(ctx context.Context, watchID int64) []tracker.Alert {
 
 // scanAndReport scans a freshly created watch and posts what it found.
 func (b *Bot) scanAndReport(watchID, chatID int64) {
-	if !b.beginScan(watchID) {
-		return
-	}
-	defer b.endScan(watchID)
-
 	ctx, cancel := context.WithTimeout(context.Background(), scanTimeout)
 	defer cancel()
 
@@ -414,6 +414,10 @@ func (b *Bot) scanAndReport(watchID, chatID int64) {
 	}
 
 	res, err := b.tracker.Scan(ctx, *w)
+	if errors.Is(err, tracker.ErrScanInProgress) {
+		// The scheduler picked this watch up first; its report will arrive.
+		return
+	}
 	if err != nil {
 		b.log.Error("initial scan failed", "watch", watchID, "err", err)
 		b.send(ctx, chatID, fmt.Sprintf("⚠️ Não consegui buscar *%s* agora\\. Vou tentar de novo no próximo ciclo\\.", esc(w.Query)))
@@ -445,17 +449,15 @@ func (b *Bot) ReportScan(ctx context.Context, w store.Watch, res *tracker.Result
 		reais := res.Suggestion / 100
 		text += "\n\n💡 Os preços se dividem em dois grupos\\. Rastrear só o grupo acima de " +
 			money(reais*100) + "?"
-		b.sendWithKeyboard(ctx, w.ChatID, text, &models.InlineKeyboardMarkup{
+		return b.sendWithKeyboard(ctx, w.ChatID, text, &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{{
 				button("✂️ Sim, filtrar", actSetFloor, w.ID, reais),
 				button("Manter tudo", actNoop, 0, 0),
 			}},
 		})
-		return nil
 	}
 
-	b.send(ctx, w.ChatID, text)
-	return nil
+	return b.send(ctx, w.ChatID, text)
 }
 
 // row loads a watch for a callback, reporting failures into the message.

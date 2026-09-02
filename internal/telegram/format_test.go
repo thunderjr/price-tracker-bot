@@ -12,7 +12,7 @@ import (
 
 // MarkdownV2 rejects a message with an unescaped reserved character, so
 // Telegram drops it entirely. Product titles are full of them.
-var markdownReserved = []string{"_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
+var markdownReserved = []string{"\\", "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
 
 // unescapedOutsideLinks reports reserved characters that are neither escaped
 // nor part of a link target, which is the only place they may appear raw.
@@ -127,8 +127,9 @@ func TestFormatDigestCapsAtThreeOffers(t *testing.T) {
 	}
 
 	got := formatDigest(store.Watch{Query: "ps5"}, alerts, offers, 91, nil)
-	if n := strings.Count(got, "https://"); n != 3 {
-		t.Errorf("digest carries %d links, want 3:\n%s", n, got)
+	// The headline carries a link of its own, so count the offer rows only.
+	if n := strings.Count(got, "https://meli/x"); n != 3 {
+		t.Errorf("digest lists %d offers, want 3:\n%s", n, got)
 	}
 	if !strings.Contains(got, "e mais 55 alertas") {
 		t.Errorf("digest did not report the remaining findings:\n%s", got)
@@ -232,8 +233,19 @@ func TestFormatListEmpty(t *testing.T) {
 }
 
 func TestHelpTextIsValidMarkdown(t *testing.T) {
-	if bad := unescapedOutsideLinks(t, helpText); len(bad) > 0 {
-		t.Errorf("helpText has unescaped %v:\n%s", bad, helpText)
+	// A fractional threshold puts a "." in the text, which MarkdownV2 counts
+	// as markup and would make Telegram drop the whole message.
+	for _, threshold := range []float64{0.01, 0.005} {
+		text := helpText(threshold)
+		if bad := unescapedOutsideLinks(t, text); len(bad) > 0 {
+			t.Errorf("helpText(%v) has unescaped %v:\n%s", threshold, bad, text)
+		}
+	}
+
+	// The quoted figure follows the configuration instead of being written
+	// into the text, where it went stale the moment the default changed.
+	if got := helpText(0.03); !strings.Contains(got, "mais de 3%") {
+		t.Errorf("helpText(0.03) does not quote the configured threshold:\n%s", got)
 	}
 }
 
@@ -299,5 +311,40 @@ func TestInstallmentLineOmitsRedundantTotal(t *testing.T) {
 	}
 	if strings.Contains(got, "total") {
 		t.Errorf("installmentLine = %q, want no total when it equals the price", got)
+	}
+}
+
+// A backslash in a title is not escaped by go-telegram's EscapeMarkdown, so it
+// reached Telegram raw and escaped the character after it -- breaking a link,
+// or costing the whole message.
+func TestFormatDigestEscapesBackslash(t *testing.T) {
+	alerts := []tracker.Alert{digestAlert(tracker.KindNewLow, `LEGO 10\/1 Falcon`, 400000, 500000)}
+	offers := []store.WatchOffer{digestOffer("meli", `LEGO 10\/1 Falcon`, 400000, 0, 0)}
+
+	got := formatDigest(store.Watch{Query: "lego"}, alerts, offers, 1, nil)
+	if strings.Contains(got, `10\/1`) {
+		t.Errorf("the title's backslash reached Telegram unescaped:\n%s", got)
+	}
+	if !strings.Contains(got, `10\\`) {
+		t.Errorf("the title's backslash was not doubled:\n%s", got)
+	}
+	if bad := unescapedOutsideLinks(t, got); len(bad) > 0 {
+		t.Errorf("digest has unescaped %v:\n%s", bad, got)
+	}
+}
+
+// The alerted listing is often not one of the three cheapest offers, and the
+// message that announced its price then offered no way to reach it.
+func TestFormatDigestLinksTheHeadlineListing(t *testing.T) {
+	alerts := []tracker.Alert{digestAlert(tracker.KindTarget, "Console PlayStation 5 Slim", 340000, 350000)}
+	// Three cheaper offers, none of them the listing that alerted.
+	var offers []store.WatchOffer
+	for i := range digestOffers {
+		offers = append(offers, digestOffer("amazon", fmt.Sprintf("Jogo %d", i), int64(20000+i), 0, 0))
+	}
+
+	got := formatDigest(store.Watch{Query: "ps5"}, alerts, offers, 4, nil)
+	if !strings.Contains(got, "https://ml/p/MLB1") {
+		t.Errorf("the alerted listing has no link anywhere in the digest:\n%s", got)
 	}
 }

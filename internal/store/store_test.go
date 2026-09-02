@@ -137,13 +137,40 @@ func TestPriceHistory(t *testing.T) {
 	if len(recent) != 1 {
 		t.Errorf("20d window has %d points, want 1", len(recent))
 	}
+}
 
-	latest, err := s.LatestPrice(ctx, pid)
+// Points written inside the same second must still come back in order: the
+// stored timestamp is compared as a string, and a layout that trims trailing
+// zeros from the fraction sorts "12:00:00Z" after "12:00:00.5Z".
+func TestPriceHistoryOrdersWithinASecond(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	pid, err := s.UpsertProduct(ctx, Product{Source: "meli", ExternalID: "MLB1", Title: "PS5", URL: "u"})
 	if err != nil {
-		t.Fatalf("LatestPrice: %v", err)
+		t.Fatalf("UpsertProduct: %v", err)
 	}
-	if latest.PriceCents != 460000 {
-		t.Errorf("LatestPrice = %d, want 460000", latest.PriceCents)
+
+	// A whole second, which RFC3339Nano writes without any fraction at all,
+	// then half a second later.
+	whole := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	for i, cents := range []int64{500000, 480000} {
+		p := PricePoint{
+			ProductID:  pid,
+			PriceCents: cents,
+			SeenAt:     whole.Add(time.Duration(i) * 500 * time.Millisecond),
+		}
+		if err := s.AddPricePoint(ctx, p); err != nil {
+			t.Fatalf("AddPricePoint: %v", err)
+		}
+	}
+
+	after, err := s.PriceHistory(ctx, pid, whole.Add(250*time.Millisecond))
+	if err != nil {
+		t.Fatalf("PriceHistory: %v", err)
+	}
+	if len(after) != 1 || after[0].PriceCents != 480000 {
+		t.Errorf("window from mid-second returned %v, want only the 480000 point", after)
 	}
 }
 
@@ -246,7 +273,7 @@ func TestAlertDedupeBookkeeping(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := s.LastAlert(ctx, pid, "new_low"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.LastAlert(ctx, w.ID, pid, "new_low"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("LastAlert on fresh product = %v, want ErrNotFound", err)
 	}
 
@@ -257,7 +284,7 @@ func TestAlertDedupeBookkeeping(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	at, cents, err := s.LastAlert(ctx, pid, "new_low")
+	at, cents, err := s.LastAlert(ctx, w.ID, pid, "new_low")
 	if err != nil {
 		t.Fatalf("LastAlert: %v", err)
 	}
@@ -269,8 +296,18 @@ func TestAlertDedupeBookkeeping(t *testing.T) {
 	}
 
 	// A different kind is tracked independently.
-	if _, _, err := s.LastAlert(ctx, pid, "drop_vs_median"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.LastAlert(ctx, w.ID, pid, "drop_vs_median"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("kinds are not independent: %v", err)
+	}
+
+	// So is another watch following the same listing. Sharing the cooldown
+	// silences one of them for a day and the notification is simply lost.
+	other, err := s.CreateWatch(ctx, 1, WatchSpec{Query: "playstation 5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.LastAlert(ctx, other.ID, pid, "new_low"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another watch's alert satisfied this watch's cooldown: %v", err)
 	}
 }
 

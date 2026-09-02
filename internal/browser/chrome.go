@@ -225,7 +225,7 @@ func (b *Browser) Run(ctx context.Context, actions ...chromedp.Action) error {
 	defer b.mu.Unlock()
 
 	err := b.runOnceLocked(ctx, actions...)
-	if err == nil || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+	if !worthRestarting(ctx, err) {
 		return err
 	}
 
@@ -235,6 +235,29 @@ func (b *Browser) Run(ctx context.Context, actions ...chromedp.Action) error {
 		return fmt.Errorf("browser: after restart: %w", err)
 	}
 	return nil
+}
+
+// worthRestarting reports whether a failed run deserves a browser restart.
+//
+// Only the caller giving up rules it out. chromedp cancels the browser context
+// when the websocket drops, so a Chromium that died mid-run arrives here as
+// context.Canceled while the caller's own context is healthy -- reading that
+// as "the caller left" skipped the restart on the one failure a restart
+// always fixes, and every later search failed the same way.
+// worthRestarting decides whether a failed run means the browser is broken.
+//
+// A crashed Chromium is reported as context.Canceled with the caller's context
+// still healthy, because chromedp cancels the browser context when the
+// websocket drops — so Canceled cannot be read as a clean exit.
+//
+// The per-run deadline is different: a page that simply took too long says
+// nothing about the browser, and tearing Chromium down loses the profile
+// warmth that gets us past Mercado Livre in the first place.
+func worthRestarting(ctx context.Context, err error) bool {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	return !errors.Is(err, context.DeadlineExceeded)
 }
 
 func (b *Browser) runOnceLocked(ctx context.Context, actions ...chromedp.Action) error {

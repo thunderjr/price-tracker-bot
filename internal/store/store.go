@@ -30,6 +30,12 @@ var migrations = []string{
 	`ALTER TABLE watches ADD COLUMN notified_best_cents INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE price_points ADD COLUMN installment_count INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE price_points ADD COLUMN installment_each_cents INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE watch_products ADD COLUMN miss_count INTEGER NOT NULL DEFAULT 0`,
+	// The alert cooldown became per (watch, product), so its index gained
+	// watch_id. An existing database still carries the two-column version
+	// under the same name, which CREATE INDEX IF NOT EXISTS will not replace.
+	`DROP INDEX IF EXISTS idx_alerts_recent`,
+	`CREATE INDEX IF NOT EXISTS idx_alerts_recent ON alerts (watch_id, product_id, kind, fired_at DESC)`,
 }
 
 // ErrNotFound is returned when a lookup by id matches nothing.
@@ -338,14 +344,34 @@ func (s *Store) UpsertProduct(ctx context.Context, p Product) (int64, error) {
 	return id, nil
 }
 
-// LinkWatchProduct records that a watch's query surfaced this product.
+// LinkWatchProduct records that a watch's query surfaced this product, which
+// also clears whatever run of misses it had accumulated.
 func (s *Store) LinkWatchProduct(ctx context.Context, watchID, productID int64, at time.Time) error {
 	ts := formatTime(at)
 	return s.exec(ctx, "link watch product", `
 		INSERT INTO watch_products (watch_id, product_id, first_seen, last_seen)
 		VALUES (?, ?, ?, ?)
-		ON CONFLICT (watch_id, product_id) DO UPDATE SET last_seen = excluded.last_seen`,
+		ON CONFLICT (watch_id, product_id) DO UPDATE SET
+		    last_seen  = excluded.last_seen,
+		    miss_count = 0`,
 		watchID, productID, ts, ts)
+}
+
+// MissWatchProduct records that a scan did not see a listing the watch tracks,
+// returning how many consecutive scans have now missed it.
+func (s *Store) MissWatchProduct(ctx context.Context, watchID, productID int64) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+		UPDATE watch_products SET miss_count = miss_count + 1
+		WHERE watch_id = ? AND product_id = ?
+		RETURNING miss_count`, watchID, productID).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("store: miss watch product: %w", err)
+	}
+	return n, nil
 }
 
 // UnlinkWatchProduct stops a watch following a product. The product and its
@@ -354,24 +380,6 @@ func (s *Store) LinkWatchProduct(ctx context.Context, watchID, productID int64, 
 func (s *Store) UnlinkWatchProduct(ctx context.Context, watchID, productID int64) error {
 	return s.exec(ctx, "unlink watch product",
 		`DELETE FROM watch_products WHERE watch_id = ? AND product_id = ?`, watchID, productID)
-}
-
-// LatestPrice returns the most recent observation for a product.
-func (s *Store) LatestPrice(ctx context.Context, productID int64) (*PricePoint, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT product_id, price_cents, list_price_cents, site_flags,
-		       COALESCE(installment_count, 0), COALESCE(installment_each_cents, 0), seen_at
-		FROM price_points WHERE product_id = ?
-		ORDER BY seen_at DESC, id DESC LIMIT 1`, productID)
-
-	p, err := scanPricePoint(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: latest price: %w", err)
-	}
-	return &p, nil
 }
 
 // AddPricePoint appends an observation.
@@ -433,16 +441,21 @@ func scanPricePoint(row rowScanner) (PricePoint, error) {
 
 // --- alerts ---
 
-// LastAlert returns the most recent alert of a kind for a product.
-func (s *Store) LastAlert(ctx context.Context, productID int64, kind string) (time.Time, int64, error) {
+// LastAlert returns the most recent alert of a kind a watch fired for a
+// product.
+//
+// Scoped per watch, not per product: two watches can follow the same listing
+// with different targets and different histories, and letting one satisfy the
+// other's cooldown loses a notification outright.
+func (s *Store) LastAlert(ctx context.Context, watchID, productID int64, kind string) (time.Time, int64, error) {
 	var (
 		firedAt string
 		cents   int64
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT fired_at, price_cents FROM alerts
-		WHERE product_id = ? AND kind = ?
-		ORDER BY fired_at DESC, id DESC LIMIT 1`, productID, kind).Scan(&firedAt, &cents)
+		WHERE watch_id = ? AND product_id = ? AND kind = ?
+		ORDER BY fired_at DESC, id DESC LIMIT 1`, watchID, productID, kind).Scan(&firedAt, &cents)
 	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, 0, ErrNotFound
 	}
@@ -556,9 +569,18 @@ func (s *Store) exec(ctx context.Context, what, query string, args ...any) error
 	return nil
 }
 
-// Times are stored as RFC3339 in UTC so string ordering matches chronological
-// ordering, which is what the range queries above rely on.
-func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+// timeLayout is RFC3339 in UTC with a fixed-width fraction, so string ordering
+// matches chronological ordering -- which is what the range queries above rely
+// on. RFC3339Nano trims trailing zeros from the fraction, and a trimmed
+// "12:00:00Z" sorts *after* "12:00:00.5Z".
+//
+// Rows written before this layout keep their trimmed fraction. They only
+// misorder against each other inside a single second, which is far below the
+// resolution of anything here (scans are hours apart, heartbeats daily), so
+// they are left as they are rather than rewritten.
+const timeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+func formatTime(t time.Time) string { return t.UTC().Format(timeLayout) }
 
 func parseTime(s string) time.Time {
 	if s == "" {

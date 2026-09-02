@@ -63,8 +63,16 @@ func (o Offer) Discount() int {
 
 var nonPrice = regexp.MustCompile(`[^\d,\.]`)
 
+// dotDecimal matches the shapes where "." cannot be a thousands separator:
+// pt-BR groups thousands in threes, so "4.184" is four thousand reais, while
+// "3499.90" is somebody typing a target with a decimal point. Read as
+// thousands that becomes R$ 349.990,00 and the target then fires on
+// everything.
+var dotDecimal = regexp.MustCompile(`^\d+\.\d{1,2}$`)
+
 // ParseBRL turns Brazilian price text into cents. It accepts the forms both
-// marketplaces emit: "R$ 4.184,06", "4.184", "4184,06", "R$4,99".
+// marketplaces emit: "R$ 4.184,06", "4.184", "4184,06", "R$4,99", plus the
+// "3499.90" a person types when a target price is asked for.
 // It returns 0 when there is no parsable number.
 func ParseBRL(s string) int64 {
 	s = nonPrice.ReplaceAllString(s, "")
@@ -72,7 +80,12 @@ func ParseBRL(s string) int64 {
 		return 0
 	}
 
-	// "." is always a thousands separator in pt-BR; "," is the decimal comma.
+	// "." is a thousands separator in pt-BR and "," the decimal comma, except
+	// where the digits after the "." cannot be a thousands group.
+	if dotDecimal.MatchString(s) {
+		s = strings.Replace(s, ".", ",", 1)
+	}
+
 	whole, frac, hasFrac := strings.Cut(s, ",")
 	whole = strings.ReplaceAll(whole, ".", "")
 	if whole == "" {
@@ -134,10 +147,14 @@ func pad2(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
 
-// Installment plan tolerance. A displayed installment total is rounded (ten
-// instalments of R$ 449,90 are advertised as "R$ 4.499"), so the arithmetic
-// never matches to the cent.
-const installmentTolerance = 0.015
+// Installment plan tolerance, 1.5% as a ratio of integers. A displayed
+// installment total is rounded (ten instalments of R$ 449,90 are advertised as
+// "R$ 4.499"), so the arithmetic never matches to the cent -- and a price is
+// integer cents, which no comparison here is allowed to turn into a float.
+const (
+	installmentToleranceNum = 15
+	installmentToleranceDen = 1000
+)
 
 // InstallmentPlan is a listing's financing offer, parsed from free text.
 type InstallmentPlan struct {
@@ -176,7 +193,7 @@ func (p InstallmentPlan) IsInstallmentTotal(cents int64) bool {
 	if diff < 0 {
 		diff = -diff
 	}
-	return float64(diff) <= float64(total)*installmentTolerance
+	return diff*installmentToleranceDen <= total*installmentToleranceNum
 }
 
 // Installment clauses, matched explicitly rather than by scanning for numbers.
@@ -188,9 +205,10 @@ var (
 	// Mercado Livre writes it: "ou R$ 4.599,90 em 10x R$ 459,99".
 	installmentRe = regexp.MustCompile(
 		`(?i)(?:ou\s+R\$\s*([\d.]+(?:,\d{1,2})?)\s+)?em\s+(?:at[eé]\s+)?(\d{1,2})\s*x\s*(?:de\s+)?R\$\s*([\d.]+(?:,\d{1,2})?)`)
-	// Mercado Livre's bare form: "12x R$ 459,99 sem juros".
+	// Mercado Livre's bare form: "12x R$ 459,99 sem juros", with or without
+	// the "de" it sometimes writes ("12x de R$ 459,99").
 	bareInstallmentRe = regexp.MustCompile(
-		`(?i)(?:^|\s)(\d{1,2})\s*x\s*R\$\s*([\d.]+(?:,\d{1,2})?)`)
+		`(?i)(?:^|\s)(\d{1,2})\s*x\s*(?:de\s+)?R\$\s*([\d.]+(?:,\d{1,2})?)`)
 	// "ou R$ 5.499 em outros meios" states a total outright.
 	otherMeansRe = regexp.MustCompile(
 		`(?i)ou\s+R\$\s*([\d.]+(?:,\d{1,2})?)\s*(?:em\s+)?outros\s+meios`)

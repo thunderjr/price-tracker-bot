@@ -43,11 +43,6 @@ type Bot struct {
 	// for, set by the target button and consumed by the next reply.
 	pendingMu sync.Mutex
 	pending   map[int64]pendingTarget
-
-	// scanning guards against a second scan of the same watch being kicked off
-	// while the first is still walking the browser.
-	scanningMu sync.Mutex
-	scanning   map[int64]bool
 }
 
 // pendingTarget remembers everything needed to fold the reply back into the
@@ -67,12 +62,11 @@ func New(cfg *config.Config, st *store.Store, tr *tracker.Tracker, log *slog.Log
 	}
 
 	b := &Bot{
-		cfg:      cfg,
-		store:    st,
-		tracker:  tr,
-		log:      log,
-		pending:  map[int64]pendingTarget{},
-		scanning: map[int64]bool{},
+		cfg:     cfg,
+		store:   st,
+		tracker: tr,
+		log:     log,
+		pending: map[int64]pendingTarget{},
 	}
 
 	api, err := tgbot.New(cfg.TelegramToken, tgbot.WithDefaultHandler(b.handle))
@@ -145,7 +139,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 
 	switch cmd {
 	case "/start", "/help":
-		b.send(ctx, chatID, helpText)
+		b.send(ctx, chatID, helpText(b.cfg.BestMoveThreshold))
 	case "/track":
 		b.cmdTrack(ctx, chatID, args)
 	case "/manage":
@@ -161,8 +155,12 @@ func (b *Bot) handleMessage(ctx context.Context, msg *models.Message) {
 
 // --- outgoing helpers ---
 
-func (b *Bot) send(ctx context.Context, chatID int64, text string) *models.Message {
-	msg, err := b.api.SendMessage(ctx, &tgbot.SendMessageParams{
+// send posts a message. The error is returned as well as logged: an alert is
+// already recorded as fired by the time it gets here, so a caller that reports
+// success without checking turns a rate-limited send into a finding nobody
+// ever hears about.
+func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
+	_, err := b.api.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID:             chatID,
 		Text:               text,
 		ParseMode:          models.ParseModeMarkdown,
@@ -170,11 +168,12 @@ func (b *Bot) send(ctx context.Context, chatID int64, text string) *models.Messa
 	})
 	if err != nil {
 		b.log.Error("send message failed", "chat", chatID, "err", err)
+		return fmt.Errorf("telegram: send to chat %d: %w", chatID, err)
 	}
-	return msg
+	return nil
 }
 
-func (b *Bot) sendWithKeyboard(ctx context.Context, chatID int64, text string, kb *models.InlineKeyboardMarkup) {
+func (b *Bot) sendWithKeyboard(ctx context.Context, chatID int64, text string, kb *models.InlineKeyboardMarkup) error {
 	_, err := b.api.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID:             chatID,
 		Text:               text,
@@ -184,7 +183,9 @@ func (b *Bot) sendWithKeyboard(ctx context.Context, chatID int64, text string, k
 	})
 	if err != nil {
 		b.log.Error("send keyboard message failed", "chat", chatID, "err", err)
+		return fmt.Errorf("telegram: send to chat %d: %w", chatID, err)
 	}
+	return nil
 }
 
 // edit rewrites a message in place. Re-rendering an identical view is normal
@@ -241,7 +242,11 @@ func isNotModified(err error) bool {
 // a real scan once produced 56 notifications in one go. Findings are grouped
 // by watch, summarized into a headline, and followed by the three cheapest
 // offers with their links.
-func (b *Bot) Deliver(ctx context.Context, alerts []tracker.Alert) {
+//
+// A watch that could not be delivered is reported, not just logged: its alerts
+// are already recorded as fired, so the caller is the only one left that can
+// tell the difference between "nothing to say" and "said nothing".
+func (b *Bot) Deliver(ctx context.Context, alerts []tracker.Alert) error {
 	byWatch := map[int64][]tracker.Alert{}
 	order := make([]int64, 0, len(alerts))
 	for _, a := range alerts {
@@ -251,6 +256,7 @@ func (b *Bot) Deliver(ctx context.Context, alerts []tracker.Alert) {
 		byWatch[a.Watch.ID] = append(byWatch[a.Watch.ID], a)
 	}
 
+	var errs []error
 	for _, watchID := range order {
 		group := byWatch[watchID]
 		w := group[0].Watch
@@ -258,15 +264,20 @@ func (b *Bot) Deliver(ctx context.Context, alerts []tracker.Alert) {
 		offers, err := b.store.WatchOffers(ctx, watchID, statsWindow, digestOffers)
 		if err != nil {
 			b.log.Error("digest offers failed", "watch", watchID, "err", err)
+			errs = append(errs, err)
 			continue
 		}
 		stats, err := b.store.Stats(ctx, watchID, statsWindow)
 		if err != nil {
 			b.log.Error("digest stats failed", "watch", watchID, "err", err)
+			errs = append(errs, err)
 			continue
 		}
-		b.send(ctx, w.ChatID, formatDigest(w, group, offers, stats.Products, nil))
+		if err := b.send(ctx, w.ChatID, formatDigest(w, group, offers, stats.Products, nil)); err != nil {
+			errs = append(errs, err)
+		}
 	}
+	return errors.Join(errs...)
 }
 
 // --- pending target prompts ---
@@ -292,25 +303,6 @@ func (b *Bot) takePending(chatID int64) (pendingTarget, bool) {
 		return pendingTarget{}, false
 	}
 	return p, true
-}
-
-// --- scan locking ---
-
-// beginScan reserves a watch for scanning, reporting whether the caller got it.
-func (b *Bot) beginScan(watchID int64) bool {
-	b.scanningMu.Lock()
-	defer b.scanningMu.Unlock()
-	if b.scanning[watchID] {
-		return false
-	}
-	b.scanning[watchID] = true
-	return true
-}
-
-func (b *Bot) endScan(watchID int64) {
-	b.scanningMu.Lock()
-	defer b.scanningMu.Unlock()
-	delete(b.scanning, watchID)
 }
 
 // --- shared loading ---

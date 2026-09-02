@@ -1,6 +1,9 @@
 package browser
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -77,5 +80,61 @@ func TestProbeProfileDir(t *testing.T) {
 	}
 	if got := ProbeProfileDir(""); got != "" {
 		t.Errorf("ProbeProfileDir(\"\") = %q, want empty so chromedp picks a temp dir", got)
+	}
+}
+
+// A Chromium that dies mid-run reports context.Canceled, because chromedp
+// cancels the browser context when the websocket drops. Reading that as "the
+// caller gave up" left the dead browser in place, and every search after it
+// failed the same way.
+func TestWorthRestartingAfterBrowserCrash(t *testing.T) {
+	live := context.Background()
+
+	if !worthRestarting(live, context.Canceled) {
+		t.Error("a crashed browser was not restarted")
+	}
+	if !worthRestarting(live, errors.New("could not find node")) {
+		t.Error("an ordinary failure was not restarted")
+	}
+	if worthRestarting(live, nil) {
+		t.Error("a successful run restarted the browser")
+	}
+
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	if worthRestarting(gone, context.Canceled) {
+		t.Error("relaunched Chromium after the caller gave up, which nobody is waiting for")
+	}
+}
+
+// A failed run must be read correctly, because the two wrong answers are both
+// costly: never restarting leaves every later scan talking to a dead browser,
+// and restarting on a slow page throws away the warmed profile that gets us
+// past Mercado Livre.
+func TestWorthRestarting(t *testing.T) {
+	live := context.Background()
+	dead, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want bool
+	}{
+		{"nothing went wrong", live, nil, false},
+		{"caller gave up", dead, context.Canceled, false},
+		// chromedp cancels the browser context when the websocket drops, so a
+		// crash arrives looking like an ordinary cancellation.
+		{"chromium died mid-run", live, context.Canceled, true},
+		{"page too slow", live, context.DeadlineExceeded, false},
+		{"wrapped page too slow", live, fmt.Errorf("navigate: %w", context.DeadlineExceeded), false},
+		{"chrome failed to start", live, errors.New("chrome failed to start"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := worthRestarting(tc.ctx, tc.err); got != tc.want {
+				t.Errorf("worthRestarting(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

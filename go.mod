@@ -5,6 +5,8 @@ go 1.26
 require (
 	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/chromedp/chromedp v0.16.0
+	github.com/go-telegram/bot v1.25.0
+	modernc.org/sqlite v1.57.0
 )
 
 require (
@@ -13,7 +15,6 @@ require (
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect
-	github.com/go-telegram/bot v1.25.0 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
@@ -26,5 +27,4 @@ require (
 	modernc.org/libc v1.74.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.57.0 // indirect
 )

@@ -26,6 +26,26 @@ func TestParseBRL(t *testing.T) {
 	}
 }
 
+// A target typed with a decimal point read as thousands: "3499.90" became
+// R$ 349.990,00, and the target alert then fired on every listing forever.
+// The marketplaces' own "4.184" must keep meaning four thousand.
+func TestParseBRLDecimalPoint(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want int64
+	}{
+		{"3499.90", 349990},
+		{"3499.9", 349990}, // a thousands group is always three digits
+		{"0.50", 50},
+		{"4.184", 418400},
+		{"1.234.567,89", 123456789},
+	} {
+		if got := ParseBRL(tc.in); got != tc.want {
+			t.Errorf("ParseBRL(%q) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestFormatBRL(t *testing.T) {
 	for _, tc := range []struct {
 		in   int64
@@ -82,6 +102,10 @@ func TestParseInstallments(t *testing.T) {
 		{"em até 12x de R$ 383,32 sem juros", 12, 38332, 0},
 		// Mercado Livre
 		{"12x R$ 459,99 sem juros", 12, 45999, 0},
+		// The same, with the "de" Mercado Livre sometimes writes. Missing it
+		// left the plan unparsed, and the struck total then read as a
+		// discount that never expires.
+		{"12x de R$ 459,99 sem juros", 12, 45999, 0},
 		{"ou R$ 4.599,90 em 10x R$ 459,99 sem juros", 10, 45999, 459990},
 		{"ou R$ 5.499 em outros meios", 0, 0, 549900},
 		{"ou R$ 749 em outros meios", 0, 0, 74900},

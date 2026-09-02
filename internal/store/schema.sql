@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS watch_products (
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     first_seen TEXT    NOT NULL,
     last_seen  TEXT    NOT NULL,
+    -- miss_count is how many consecutive scans have failed to see this
+    -- listing on a source that answered. A delisted offer must stop driving
+    -- the watch's best price, but one absence proves nothing.
+    miss_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (watch_id, product_id)
 );
 
@@ -62,4 +66,4 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_alerts_recent
-    ON alerts (product_id, kind, fired_at DESC);
+    ON alerts (watch_id, product_id, kind, fired_at DESC);

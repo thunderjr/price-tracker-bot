@@ -191,3 +191,32 @@ func TestParseIgnoresPerInstallmentAmount(t *testing.T) {
 		}
 	}
 }
+
+// Every result card lacking a price is a real answer, not a fault: the search
+// matched things, none of which are being sold directly ("Ver opções de
+// compra"). Reporting it as blocked put "Sem resposta de: Amazon" in the
+// digest and sent the scan hunting a problem that was not there.
+func TestParseUnpricedCardsAreNotABlock(t *testing.T) {
+	page := `<html><body>` +
+		strings.Repeat(`<div data-component-type="s-search-result" data-asin="B00TEST001">
+			<div data-cy="title-recipe"><h2><span>Console sem oferta direta</span></h2></div>
+			<div data-cy="price-recipe"><span>Ver opções de compra</span></div>
+		</div>`, 12) +
+		`</body></html>`
+
+	offers, err := Parse(page)
+	if err != nil {
+		t.Fatalf("Parse error = %v, want nil: cards were present, just unpriced", err)
+	}
+	if len(offers) != 0 {
+		t.Errorf("got %d offers, want 0", len(offers))
+	}
+}
+
+// With no cards at all the page is still unrecognized, and that distinction
+// has to survive.
+func TestParseNoCardsStillClassified(t *testing.T) {
+	if _, err := Parse(`<html><body>nothing here</body></html>`); !errors.Is(err, source.ErrThrottled) {
+		t.Errorf("small blank page: got %v, want ErrThrottled", err)
+	}
+}

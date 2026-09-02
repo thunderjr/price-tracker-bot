@@ -472,7 +472,9 @@ func truncate(s string, n int) string {
 
 // gapFactor is how much of a jump between neighbouring prices counts as a
 // break between two kinds of product rather than ordinary price spread.
-const gapFactor = 3.0
+// It is an integer because a price is integer cents, and multiplying one by a
+// float to compare it is how rounding creeps into money.
+const gapFactor = 3
 
 // minAbove is how many listings must sit above the gap for it to be worth
 // suggesting; one or two is noise.
@@ -509,7 +511,7 @@ func SuggestFloor(offers []source.Offer) (int64, bool) {
 		if above < minAbove {
 			continue
 		}
-		if float64(prices[i]) >= float64(prices[i-1])*gapFactor {
+		if prices[i] >= prices[i-1]*gapFactor {
 			// Sit the floor just under the cheapest of the upper group.
 			return prices[i] * 9 / 10, true
 		}

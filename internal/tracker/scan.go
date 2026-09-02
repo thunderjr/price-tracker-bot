@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"github.com/thunderjr/price-tracker-bot/internal/relevance"
@@ -19,6 +20,21 @@ const heartbeat = 24 * time.Hour
 
 // maxTrackedPerWatch bounds how many listings one watch follows.
 const maxTrackedPerWatch = 2000
+
+// maxMisses is how many consecutive scans may fail to see a tracked listing
+// before the watch lets it go. The tail of a search page shifts between
+// requests, so a single absence proves nothing.
+const maxMisses = 3
+
+// ErrScanInProgress reports that this watch is already being scanned.
+//
+// The scheduler, the manager's buttons and the CLI all reach Scan, and two of
+// them working one watch at once would record its price twice, fire its alerts
+// twice, and send two messages about a single watch.
+//
+// The guard is per process, which is every path inside the running bot. A
+// separate `ptb scan` against the same database is not fenced off from it.
+var ErrScanInProgress = errors.New("tracker: watch is already being scanned")
 
 // Alert is a fired alert, ready to be delivered.
 type Alert struct {
@@ -40,8 +56,9 @@ type Result struct {
 	Filtered int
 	Alerts   []Alert
 	Skipped  map[string]error // source name -> why it contributed nothing
-	// Pruned is how many already-tracked listings were dropped because they
-	// no longer pass the watch's filters.
+	// Pruned is how many already-tracked listings were dropped: either the
+	// watch's filters no longer accept them, or they have gone missing from a
+	// source that answered.
 	Pruned int
 	// BestCents is the cheapest price the watch can currently find.
 	BestCents int64
@@ -60,6 +77,12 @@ type Tracker struct {
 	// pace is the pause between source queries. Scraping politely is what
 	// keeps these sources working at all.
 	pace time.Duration
+
+	// scanning is the set of watches being scanned right now. The lock lives
+	// here rather than in the callers because every entry point has to share
+	// one, and the front end's own guard could not see the scheduler.
+	scanningMu sync.Mutex
+	scanning   map[int64]bool
 }
 
 // New builds a Tracker over the given sources.
@@ -67,7 +90,14 @@ func New(st *store.Store, rules Rules, log *slog.Logger, sources ...source.Sourc
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Tracker{store: st, sources: sources, rules: rules, log: log, pace: 5 * time.Second}
+	return &Tracker{
+		store:    st,
+		sources:  sources,
+		rules:    rules,
+		log:      log,
+		pace:     5 * time.Second,
+		scanning: map[int64]bool{},
+	}
 }
 
 // Scan searches every source for the watch's query, records prices and returns
@@ -75,7 +105,42 @@ func New(st *store.Store, rules Rules, log *slog.Logger, sources ...source.Sourc
 //
 // A source that is blocked or failing does not fail the scan: partial results
 // from the other source are far more useful than nothing.
+//
+// One watch is scanned by one caller at a time; a second gets
+// ErrScanInProgress rather than a duplicate of everything.
 func (t *Tracker) Scan(ctx context.Context, w store.Watch) (*Result, error) {
+	if !t.beginScan(w.ID) {
+		return nil, ErrScanInProgress
+	}
+	defer t.endScan(w.ID)
+	return t.scan(ctx, w)
+}
+
+// ScanInProgress reports whether this watch is being scanned, so a caller can
+// say so up front instead of starting work it would only lose the race for.
+func (t *Tracker) ScanInProgress(watchID int64) bool {
+	t.scanningMu.Lock()
+	defer t.scanningMu.Unlock()
+	return t.scanning[watchID]
+}
+
+func (t *Tracker) beginScan(watchID int64) bool {
+	t.scanningMu.Lock()
+	defer t.scanningMu.Unlock()
+	if t.scanning[watchID] {
+		return false
+	}
+	t.scanning[watchID] = true
+	return true
+}
+
+func (t *Tracker) endScan(watchID int64) {
+	t.scanningMu.Lock()
+	defer t.scanningMu.Unlock()
+	delete(t.scanning, watchID)
+}
+
+func (t *Tracker) scan(ctx context.Context, w store.Watch) (*Result, error) {
 	now := time.Now()
 	res := &Result{Skipped: map[string]error{}}
 	var allKept []source.Offer
@@ -90,7 +155,11 @@ func (t *Tracker) Scan(ctx context.Context, w store.Watch) (*Result, error) {
 	}
 	res.Pruned = pruned
 
-	rejected := map[string]bool{}
+	// seen collects the keys this scan kept, dropped every key its filtering
+	// threw away. They are reconciled after the loop rather than inside it,
+	// because the same key can appear on both sides.
+	seen := map[string]bool{}
+	var dropped []string
 
 	for i, src := range t.sources {
 		if i > 0 {
@@ -120,8 +189,11 @@ func (t *Tracker) Scan(ctx context.Context, w store.Watch) (*Result, error) {
 		}
 		res.Filtered += report.Dropped()
 		allKept = append(allKept, kept...)
+		for _, o := range kept {
+			seen[o.Source+"/"+o.ExternalID] = true
+		}
 		for _, d := range report.Drops {
-			rejected[d.Source+"/"+d.ExternalID] = true
+			dropped = append(dropped, d.Source+"/"+d.ExternalID)
 		}
 
 		res.Found += len(kept)
@@ -137,6 +209,17 @@ func (t *Tracker) Scan(ctx context.Context, w store.Watch) (*Result, error) {
 	if len(res.Skipped) == len(t.sources) {
 		return res, fmt.Errorf("tracker: every source failed for %q", w.Query)
 	}
+
+	// A duplicate result card is dropped while the copy that was kept carries
+	// the same key, so a key on both sides was not rejected at all: unlinking
+	// it would undo the product this scan has just recorded.
+	rejected := make(map[string]bool, len(dropped))
+	for _, key := range dropped {
+		if !seen[key] {
+			rejected[key] = true
+		}
+	}
+
 	// Prune again now that this scan has spoken. The first pass could only
 	// judge listings by what the database already knew about them, and a
 	// listing the marketplace has just flagged -- as an import, say -- is
@@ -147,6 +230,12 @@ func (t *Tracker) Scan(ctx context.Context, w store.Watch) (*Result, error) {
 		return res, err
 	}
 	res.Pruned += late
+
+	gone, err := t.dropDelisted(ctx, w, seen, res.Skipped)
+	if err != nil {
+		return res, err
+	}
+	res.Pruned += gone
 
 	// Only worth suggesting while the user has not already set a floor.
 	if w.MinCents == 0 {
@@ -165,7 +254,7 @@ func (t *Tracker) Scan(ctx context.Context, w store.Watch) (*Result, error) {
 	// price right now.
 	if len(tracked) > 0 {
 		res.BestCents = tracked[0].PriceCents
-		move, err := t.reportBestMove(ctx, w, tracked[0])
+		move, err := t.reportBestMove(ctx, w, tracked[0], now)
 		if err != nil {
 			return res, err
 		}
@@ -186,7 +275,7 @@ func (t *Tracker) Scan(ctx context.Context, w store.Watch) (*Result, error) {
 // The comparison is against what was last *reported*, not against the previous
 // scan, so a slow slide is announced once it adds up rather than never, and a
 // price that keeps flapping between two values does not notify twice.
-func (t *Tracker) reportBestMove(ctx context.Context, w store.Watch, best store.WatchOffer) (*Alert, error) {
+func (t *Tracker) reportBestMove(ctx context.Context, w store.Watch, best store.WatchOffer, now time.Time) (*Alert, error) {
 	previous := w.NotifiedBestCents
 
 	kind, ok := t.rules.BestMove(previous, best.PriceCents)
@@ -202,7 +291,7 @@ func (t *Tracker) reportBestMove(ctx context.Context, w store.Watch, best store.
 	if err := t.store.SetNotifiedBest(ctx, w.ID, best.PriceCents); err != nil {
 		return nil, err
 	}
-	if err := t.store.RecordAlert(ctx, w.ID, best.ID, string(kind), best.PriceCents, time.Now()); err != nil {
+	if err := t.store.RecordAlert(ctx, w.ID, best.ID, string(kind), best.PriceCents, now); err != nil {
 		return nil, err
 	}
 
@@ -274,6 +363,54 @@ func (t *Tracker) prune(ctx context.Context, w store.Watch, rejected map[string]
 	return n, nil
 }
 
+// dropDelisted unlinks listings that have gone missing from a source that
+// answered. seen holds the keys this scan kept.
+//
+// Absence is only evidence when the source that would have carried the listing
+// actually replied, and even then not on the first scan: a search page's tail
+// shifts between requests. Left linked, a delisted offer's last price goes on
+// driving the watch's best price, its best-move alerts, its digest and its
+// stats -- months after the listing stopped existing.
+func (t *Tracker) dropDelisted(ctx context.Context, w store.Watch, seen map[string]bool, skipped map[string]error) (int, error) {
+	answered := make(map[string]bool, len(t.sources))
+	for _, src := range t.sources {
+		if _, down := skipped[src.Name()]; !down {
+			answered[src.Name()] = true
+		}
+	}
+
+	tracked, err := t.store.WatchOffers(ctx, w.ID, t.rules.MedianWindow, maxTrackedPerWatch)
+	if err != nil {
+		return 0, err
+	}
+
+	n := 0
+	for _, o := range tracked {
+		if !answered[o.Source] || seen[o.Source+"/"+o.ExternalID] {
+			continue
+		}
+		misses, err := t.store.MissWatchProduct(ctx, w.ID, o.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			// The link went away underneath us -- the watch was deleted
+			// mid-scan. There is nothing left to unlink.
+			continue
+		}
+		if err != nil {
+			return n, err
+		}
+		if misses < maxMisses {
+			continue
+		}
+		if err := t.store.UnlinkWatchProduct(ctx, w.ID, o.ID); err != nil {
+			return n, err
+		}
+		t.log.Debug("untracked delisted listing", "watch", w.ID, "source", o.Source,
+			"id", o.ExternalID, "misses", misses, "title", o.Title)
+		n++
+	}
+	return n, nil
+}
+
 // record persists one offer and returns any alerts it triggers.
 func (t *Tracker) record(ctx context.Context, w store.Watch, o source.Offer, now time.Time) ([]Alert, error) {
 	product := store.Product{
@@ -320,7 +457,7 @@ func (t *Tracker) record(ctx context.Context, w store.Watch, o source.Offer, now
 
 	var out []Alert
 	for _, c := range t.rules.Evaluate(o, history, w.TargetCents, now) {
-		lastAt, lastPrice, err := t.store.LastAlert(ctx, id, string(c.Kind))
+		lastAt, lastPrice, err := t.store.LastAlert(ctx, w.ID, id, string(c.Kind))
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return nil, err
 		}

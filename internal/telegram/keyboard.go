@@ -64,9 +64,6 @@ func watchButtonLabel(r watchRow) string {
 		label += " · —"
 	} else {
 		label += " · " + source.FormatBRL(r.Stats.BestCents)
-		if d := discount(r.Stats.BestCents, 0); d > 0 {
-			label += fmt.Sprintf(" ▾%d%%", d)
-		}
 	}
 	if !r.Watch.Active {
 		label += " ⏸"

@@ -3,6 +3,7 @@ package tracker
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"time"
 
@@ -44,6 +45,10 @@ type Candidate struct {
 	// RefCents is what the price is being compared against: the median, the
 	// previous low, the listing's reference price, or the user's target.
 	RefCents int64
+	// Window is the stretch of history RefCents summarizes, set by the rules
+	// that compare against a period rather than a single figure. It is what
+	// keeps the message from naming a hardcoded number of days.
+	Window time.Duration
 	// Confident is false for signals the marketplace supplied about itself.
 	Confident bool
 }
@@ -68,9 +73,10 @@ type Rules struct {
 	// claim about its history is worth making. Without it, the second scan of
 	// a newly tracked product declares half the catalogue a record low.
 	MinHistoryAge time.Duration
-	// MinPointsNewLow is the history needed before "lowest ever" means
-	// anything.
-	MinPointsNewLow int
+	// MinPointsHistory is how many observations are needed before any claim
+	// about the product's own record -- a lowest-ever price, a promotion that
+	// was not there before -- is worth making.
+	MinPointsHistory int
 	// Cooldown suppresses a repeat of the same alert for the same product.
 	Cooldown time.Duration
 	// ReFireDrop lets a still-falling price break the cooldown, 0.05 = 5%.
@@ -89,7 +95,7 @@ func DefaultRules(dropThreshold, bestMoveThreshold float64) Rules {
 		MedianWindow:      30 * 24 * time.Hour,
 		MinPoints:         5,
 		MinHistoryAge:     12 * time.Hour,
-		MinPointsNewLow:   3,
+		MinPointsHistory:  3,
 		Cooldown:          24 * time.Hour,
 		ReFireDrop:        0.05,
 		BestMoveThreshold: bestMoveThreshold,
@@ -113,27 +119,36 @@ func (r Rules) Evaluate(offer source.Offer, history []store.PricePoint, target i
 	}
 
 	// Everything below compares against our own record, so a product we have
-	// barely met cannot produce one. Twenty minutes of history is not grounds
-	// for telling someone they are looking at a record low.
-	if len(history) == 0 || historyAge(history, now) < r.MinHistoryAge {
+	// barely met cannot produce one: three observations and half a day is the
+	// floor for all of them. Twenty minutes of history is not grounds for
+	// telling someone they are looking at a record low.
+	if len(history) < r.MinPointsHistory || historyAge(history, now) < r.MinHistoryAge {
 		return out
 	}
+	prev := history[len(history)-1]
 
-	if len(history) >= r.MinPointsNewLow {
-		if low := minPrice(history); price <= low {
-			out = append(out, Candidate{Kind: KindNewLow, PriceCents: price, RefCents: low, Confident: true})
-		}
+	// A price equal to the low is only news when it has come back down to the
+	// floor. A price that has never moved *is* its own low, and with the daily
+	// heartbeat point every flat watch would announce a fresh record low each
+	// time the cooldown lapsed.
+	if low := minPrice(history); price < low || (price == low && prev.PriceCents > low) {
+		out = append(out, Candidate{Kind: KindNewLow, PriceCents: price, RefCents: low, Confident: true})
 	}
 
 	if med, ok := r.median(history, now); ok {
-		if float64(price) < float64(med)*(1-r.DropThreshold) {
-			out = append(out, Candidate{Kind: KindDropVsMedian, PriceCents: price, RefCents: med, Confident: true})
+		if price*bpsScale < med*(bpsScale-bps(r.DropThreshold)) {
+			out = append(out, Candidate{
+				Kind:       KindDropVsMedian,
+				PriceCents: price,
+				RefCents:   med,
+				Window:     r.MedianWindow,
+				Confident:  true,
+			})
 		}
 	}
 
 	// The marketplace started advertising a promotion that was not there on the
 	// previous look.
-	prev := history[len(history)-1]
 	if promoting(offer.ListPriceCents, price, offer.SiteFlags) &&
 		!promoting(prev.ListPriceCents, prev.PriceCents, prev.SiteFlags) {
 		out = append(out, Candidate{
@@ -163,7 +178,7 @@ func (r Rules) BestMove(previous, current int64) (Kind, bool) {
 	if diff < 0 {
 		diff = -diff
 	}
-	if float64(diff) < float64(previous)*r.BestMoveThreshold {
+	if diff*bpsScale < previous*bps(r.BestMoveThreshold) {
 		return "", false
 	}
 
@@ -181,8 +196,16 @@ func (r Rules) ShouldFire(c Candidate, lastFired time.Time, lastPrice int64, now
 	}
 	// Still inside the cooldown: only a meaningfully deeper drop gets through,
 	// otherwise every tick of a slow slide becomes its own notification.
-	return lastPrice > 0 && float64(c.PriceCents) <= float64(lastPrice)*(1-r.ReFireDrop)
+	return lastPrice > 0 && c.PriceCents*bpsScale <= lastPrice*(bpsScale-bps(r.ReFireDrop))
 }
+
+// bpsScale is the denominator the threshold comparisons run in. Thresholds
+// arrive as fractions from config, but a price is integer cents and must stay
+// that way, so each comparison is scaled up to basis points instead of the
+// prices being scaled down to floats.
+const bpsScale = 10000
+
+func bps(fraction float64) int64 { return int64(math.Round(fraction * bpsScale)) }
 
 // median returns the median price over the window, and whether there was
 // enough history to trust it.
@@ -244,7 +267,11 @@ func Describe(c Candidate) string {
 	case KindNewLow:
 		return fmt.Sprintf("menor preço já registrado (antes %s)", source.FormatBRL(c.RefCents))
 	case KindDropVsMedian:
-		return fmt.Sprintf("%d%% abaixo da mediana de 30 dias (%s)", c.Discount(), source.FormatBRL(c.RefCents))
+		if days := int(c.Window.Hours() / 24); days > 0 {
+			return fmt.Sprintf("%d%% abaixo da mediana de %d dias (%s)",
+				c.Discount(), days, source.FormatBRL(c.RefCents))
+		}
+		return fmt.Sprintf("%d%% abaixo da mediana (%s)", c.Discount(), source.FormatBRL(c.RefCents))
 	case KindBestDrop:
 		return fmt.Sprintf("melhor preço caiu %d%%: era %s",
 			c.Discount(), source.FormatBRL(c.RefCents))

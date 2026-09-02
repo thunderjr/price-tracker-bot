@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math/rand/v2"
 	"time"
@@ -9,18 +10,26 @@ import (
 	"github.com/thunderjr/price-tracker-bot/internal/store"
 )
 
-// Notifier receives alerts a scheduled scan produced.
+// Notifier receives alerts a scheduled scan produced. It reports a delivery
+// that did not happen, because by then the alerts are already recorded as
+// fired and the cooldown will not offer them again.
 type Notifier interface {
-	Deliver(ctx context.Context, alerts []Alert)
+	Deliver(ctx context.Context, alerts []Alert) error
 }
+
+// watchTimeout bounds one watch's scan. Generous, because Mercado Livre goes
+// through a real browser and Amazon backs off for up to a minute when it is
+// rate limiting.
+const defaultWatchTimeout = 6 * time.Minute
 
 // Scheduler rescans every active watch on an interval.
 type Scheduler struct {
-	tracker  *Tracker
-	store    *store.Store
-	notifier Notifier
-	interval time.Duration
-	log      *slog.Logger
+	tracker      *Tracker
+	store        *store.Store
+	notifier     Notifier
+	interval     time.Duration
+	watchTimeout time.Duration
+	log          *slog.Logger
 }
 
 // NewScheduler wires a periodic scan loop.
@@ -28,7 +37,14 @@ func NewScheduler(t *Tracker, st *store.Store, n Notifier, interval time.Duratio
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Scheduler{tracker: t, store: st, notifier: n, interval: interval, log: log}
+	return &Scheduler{
+		tracker:      t,
+		store:        st,
+		notifier:     n,
+		interval:     interval,
+		watchTimeout: defaultWatchTimeout,
+		log:          log,
+	}
 }
 
 // Run scans on the interval until ctx is cancelled. It returns only on
@@ -68,17 +84,44 @@ func (s *Scheduler) sweep(ctx context.Context) {
 			return
 		}
 
-		res, err := s.tracker.Scan(ctx, w)
+		// Re-read the watch. A sweep spaces its watches minutes apart, so the
+		// row taken at the start is stale by now: the user may have paused it
+		// or changed its filters, and a scan of their own may have moved
+		// NotifiedBestCents, which decides what counts as a move worth
+		// mentioning.
+		fresh, err := s.store.Watch(ctx, w.ID)
 		if err != nil {
-			s.log.Error("scheduled scan failed", "watch", w.ID, "query", w.Query, "err", err)
+			s.log.Error("scheduler: reload watch failed", "watch", w.ID, "err", err)
 			continue
 		}
-		s.log.Info("scheduled scan done", "watch", w.ID, "query", w.Query,
+		if !fresh.Active {
+			continue
+		}
+
+		// Bound each watch on its own. Without this a single wedged scan holds
+		// the sweep open indefinitely, and every later watch in the list goes
+		// unscanned for the rest of the interval.
+		scanCtx, cancel := context.WithTimeout(ctx, s.watchTimeout)
+		res, err := s.tracker.Scan(scanCtx, *fresh)
+		cancel()
+
+		if errors.Is(err, ErrScanInProgress) {
+			s.log.Info("scheduled scan skipped, watch already being scanned",
+				"watch", fresh.ID, "query", fresh.Query)
+			continue
+		}
+		if err != nil {
+			s.log.Error("scheduled scan failed", "watch", fresh.ID, "query", fresh.Query, "err", err)
+			continue
+		}
+		s.log.Info("scheduled scan done", "watch", fresh.ID, "query", fresh.Query,
 			"found", res.Found, "tracked", res.Tracked, "filtered", res.Filtered,
 			"pruned", res.Pruned, "alerts", len(res.Alerts), "skipped", len(res.Skipped))
 
 		if len(res.Alerts) > 0 && s.notifier != nil {
-			s.notifier.Deliver(ctx, res.Alerts)
+			if err := s.notifier.Deliver(ctx, res.Alerts); err != nil {
+				s.log.Error("scheduled alerts not delivered", "watch", fresh.ID, "err", err)
+			}
 		}
 	}
 }
