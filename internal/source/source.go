@@ -43,6 +43,9 @@ type Offer struct {
 	ListPriceCents int64    `json:"list_price_cents,omitempty"`
 	Rating         float64  `json:"rating,omitempty"`
 	SiteFlags      []string `json:"site_flags,omitempty"`
+	// Installments is the listing's financing offer, kept so a reference price
+	// can be checked against it.
+	Installments InstallmentPlan `json:"installments,omitzero"`
 	// International marks a cross-border listing. The price shown for these
 	// excludes Brazilian import tax, so it is not comparable with a domestic
 	// price and would win every "cheapest" comparison dishonestly.
@@ -129,4 +132,103 @@ func pad2(n int64) string {
 		return "0" + strconv.FormatInt(n, 10)
 	}
 	return strconv.FormatInt(n, 10)
+}
+
+// Installment plan tolerance. A displayed installment total is rounded (ten
+// instalments of R$ 449,90 are advertised as "R$ 4.499"), so the arithmetic
+// never matches to the cent.
+const installmentTolerance = 0.015
+
+// InstallmentPlan is a listing's financing offer, parsed from free text.
+type InstallmentPlan struct {
+	Count int   // number of instalments, 0 when unstated
+	Each  int64 // cents per instalment
+	Total int64 // cents for the whole plan, when stated outright
+}
+
+// TotalCents is what the plan costs in total.
+func (p InstallmentPlan) TotalCents() int64 {
+	if p.Total > 0 {
+		return p.Total
+	}
+	if p.Count > 1 && p.Each > 0 {
+		return int64(p.Count) * p.Each
+	}
+	return 0
+}
+
+// IsInstallmentTotal reports whether cents is this listing's financing total
+// rather than a price it once sold for.
+//
+// Both marketplaces show a struck-through figure beside the cash price, and on
+// most listings that figure is simply the same item paid in instalments:
+// Amazon strikes "R$ 4.499,00" next to "R$ 4.184,06 à vista no Pix ou NuPay
+// ou em até 10x de R$ 449,90", and ten times 449,90 is exactly 4.499,00.
+// Reading it as a former price invents a discount that never expires, on
+// nearly every listing, and buries the real ones.
+func (p InstallmentPlan) IsInstallmentTotal(cents int64) bool {
+	total := p.TotalCents()
+	if total <= 0 || cents <= 0 {
+		return false
+	}
+
+	diff := cents - total
+	if diff < 0 {
+		diff = -diff
+	}
+	return float64(diff) <= float64(total)*installmentTolerance
+}
+
+// Installment clauses, matched explicitly rather than by scanning for numbers.
+// A price recipe contains several figures -- the cash price, the struck total,
+// the per-instalment amount -- and picking them out positionally reads the
+// wrong one.
+var (
+	// "em até 10x de R$ 449,90", optionally prefixed by the plan total as
+	// Mercado Livre writes it: "ou R$ 4.599,90 em 10x R$ 459,99".
+	installmentRe = regexp.MustCompile(
+		`(?i)(?:ou\s+R\$\s*([\d.]+(?:,\d{1,2})?)\s+)?em\s+(?:at[eé]\s+)?(\d{1,2})\s*x\s*(?:de\s+)?R\$\s*([\d.]+(?:,\d{1,2})?)`)
+	// Mercado Livre's bare form: "12x R$ 459,99 sem juros".
+	bareInstallmentRe = regexp.MustCompile(
+		`(?i)(?:^|\s)(\d{1,2})\s*x\s*R\$\s*([\d.]+(?:,\d{1,2})?)`)
+	// "ou R$ 5.499 em outros meios" states a total outright.
+	otherMeansRe = regexp.MustCompile(
+		`(?i)ou\s+R\$\s*([\d.]+(?:,\d{1,2})?)\s*(?:em\s+)?outros\s+meios`)
+)
+
+// ParseInstallments reads a marketplace's financing line. It handles the forms
+// both sites emit:
+//
+//	"em até 10x de R$ 449,90 sem juros"
+//	"12x R$ 459,99 sem juros"
+//	"ou R$ 4.599,90 em 10x R$ 459,99 sem juros"
+//	"ou R$ 5.499 em outros meios"
+func ParseInstallments(text string) InstallmentPlan {
+	var plan InstallmentPlan
+	if text == "" {
+		return plan
+	}
+	text = strings.Join(strings.Fields(text), " ")
+
+	if m := otherMeansRe.FindStringSubmatch(text); m != nil {
+		plan.Total = ParseBRL(m[1])
+		return plan
+	}
+
+	if m := installmentRe.FindStringSubmatch(text); m != nil {
+		if n, err := strconv.Atoi(m[2]); err == nil && n > 1 {
+			plan.Count = n
+		}
+		plan.Each = ParseBRL(m[3])
+		plan.Total = ParseBRL(m[1]) // empty group parses to 0
+		return plan
+	}
+
+	if m := bareInstallmentRe.FindStringSubmatch(text); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 1 {
+			plan.Count = n
+		}
+		plan.Each = ParseBRL(m[2])
+	}
+	return plan
 }

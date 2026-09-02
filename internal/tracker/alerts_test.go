@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -51,7 +52,7 @@ func get(t *testing.T, cs []Candidate, k Kind) Candidate {
 }
 
 func TestEvaluateNoHistory(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	got := r.Evaluate(source.Offer{PriceCents: 100000}, nil, 0, now)
 	if len(got) != 0 {
 		t.Errorf("first sighting produced alerts: %v", kinds(got))
@@ -61,7 +62,7 @@ func TestEvaluateNoHistory(t *testing.T) {
 // A brand new product that is already under the target should still alert:
 // the target is the user's own statement, not a claim about history.
 func TestEvaluateTargetNeedsNoHistory(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	got := r.Evaluate(source.Offer{PriceCents: 340000}, nil, 350000, now)
 	if !has(got, KindTarget) {
 		t.Fatalf("target not fired: %v", kinds(got))
@@ -74,7 +75,7 @@ func TestEvaluateTargetNeedsNoHistory(t *testing.T) {
 }
 
 func TestEvaluateNewLow(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	h := history(500000, 480000, 460000)
 
 	got := r.Evaluate(source.Offer{PriceCents: 450000}, h, 0, now)
@@ -93,7 +94,7 @@ func TestEvaluateNewLow(t *testing.T) {
 }
 
 func TestEvaluateDropVsMedian(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	h := history(500000, 500000, 500000, 500000, 500000)
 
 	// 11% below the median clears the 10% threshold.
@@ -107,7 +108,7 @@ func TestEvaluateDropVsMedian(t *testing.T) {
 }
 
 func TestEvaluateDropVsMedianNeedsEnoughHistory(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	h := history(500000, 500000, 500000, 500000) // one short of MinPoints
 
 	got := r.Evaluate(source.Offer{PriceCents: 300000}, h, 0, now)
@@ -122,7 +123,7 @@ func TestEvaluateDropVsMedianNeedsEnoughHistory(t *testing.T) {
 // One price spike must not raise the baseline and manufacture a "drop" out of
 // the product's perfectly normal price. That is why the rule uses a median.
 func TestEvaluateMedianResistsOutlier(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	h := history(500000, 500000, 900000, 500000, 500000)
 
 	med, ok := r.median(h, now)
@@ -143,7 +144,7 @@ func TestEvaluateMedianResistsOutlier(t *testing.T) {
 
 // Points older than the window are not part of the median.
 func TestEvaluateMedianWindowExcludesOldPoints(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	h := []store.PricePoint{
 		{PriceCents: 900000, SeenAt: now.AddDate(0, 0, -90)},
 		{PriceCents: 900000, SeenAt: now.AddDate(0, 0, -80)},
@@ -157,7 +158,7 @@ func TestEvaluateMedianWindowExcludesOldPoints(t *testing.T) {
 }
 
 func TestEvaluateSiteFlag(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	plain := []store.PricePoint{{PriceCents: 500000, SeenAt: now.AddDate(0, 0, -1)}}
 
 	offer := source.Offer{PriceCents: 490000, ListPriceCents: 600000, SiteFlags: []string{"18% OFF"}}
@@ -172,7 +173,7 @@ func TestEvaluateSiteFlag(t *testing.T) {
 
 // A promotion that was already advertised last time is not news.
 func TestEvaluateSiteFlagOnlyOnTransition(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	promoted := []store.PricePoint{{
 		PriceCents:     500000,
 		ListPriceCents: 600000,
@@ -187,7 +188,7 @@ func TestEvaluateSiteFlagOnlyOnTransition(t *testing.T) {
 }
 
 func TestShouldFire(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	c := Candidate{Kind: KindNewLow, PriceCents: 400000}
 
 	if !r.ShouldFire(c, time.Time{}, 0, now) {
@@ -212,7 +213,7 @@ func TestShouldFire(t *testing.T) {
 }
 
 func TestEvaluateIgnoresZeroPrice(t *testing.T) {
-	r := DefaultRules(0.10)
+	r := DefaultRules(0.10, 0.01)
 	if got := r.Evaluate(source.Offer{PriceCents: 0}, history(500000), 100000, now); len(got) != 0 {
 		t.Errorf("alerts from a zero price: %v", kinds(got))
 	}
@@ -229,5 +230,45 @@ func TestDescribe(t *testing.T) {
 		if got := Describe(c); got == "" || got == string(c.Kind) {
 			t.Errorf("Describe(%s) = %q", c.Kind, got)
 		}
+	}
+}
+
+// The commentary a tracker exists for: say something when the cheapest offer
+// moves, in either direction, without saying it on every scan.
+func TestBestMove(t *testing.T) {
+	r := DefaultRules(0.10, 0.01)
+
+	for _, tc := range []struct {
+		name              string
+		previous, current int64
+		want              Kind
+		fires             bool
+	}{
+		{"drop past the threshold", 450000, 440000, KindBestDrop, true},
+		{"rise past the threshold", 440000, 450000, KindBestRise, true},
+		{"exactly at the threshold", 100000, 99000, KindBestDrop, true},
+		{"below the threshold", 450000, 449900, "", false},
+		{"unchanged", 450000, 450000, "", false},
+		{"first ever scan", 0, 450000, "", false},
+		{"everything delisted", 450000, 0, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			kind, ok := r.BestMove(tc.previous, tc.current)
+			if ok != tc.fires || kind != tc.want {
+				t.Errorf("BestMove(%d, %d) = (%q, %v), want (%q, %v)",
+					tc.previous, tc.current, kind, ok, tc.want, tc.fires)
+			}
+		})
+	}
+}
+
+func TestDescribeBestMoves(t *testing.T) {
+	drop := Describe(Candidate{Kind: KindBestDrop, PriceCents: 404700, RefCents: 459900})
+	if !strings.Contains(drop, "caiu") || !strings.Contains(drop, "4.599") {
+		t.Errorf("best-drop description = %q", drop)
+	}
+	rise := Describe(Candidate{Kind: KindBestRise, PriceCents: 459900, RefCents: 404700})
+	if !strings.Contains(rise, "subiu") || !strings.Contains(rise, "4.047") {
+		t.Errorf("best-rise description = %q", rise)
 	}
 }

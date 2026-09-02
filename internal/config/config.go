@@ -19,9 +19,14 @@ type Config struct {
 	ChromeProfile string
 	ChromePath    string
 
-	ScanInterval  time.Duration
+	ScanInterval time.Duration
+	// DropThreshold is how far below its own median a price must fall to be
+	// an alert, 0.10 = 10%.
 	DropThreshold float64
-	LogLevel      string
+	// BestMoveThreshold is how far a watch's best price must move to be worth
+	// a message, 0.01 = 1%.
+	BestMoveThreshold float64
+	LogLevel          string
 }
 
 // Load reads the environment and applies defaults. It does not validate the
@@ -52,6 +57,12 @@ func Load() (*Config, error) {
 	}
 	if c.DropThreshold <= 0 || c.DropThreshold >= 1 {
 		return nil, fmt.Errorf("config: DROP_THRESHOLD must be between 0 and 1, got %v", c.DropThreshold)
+	}
+	if c.BestMoveThreshold, err = strconv.ParseFloat(env("BEST_MOVE_THRESHOLD", "0.01"), 64); err != nil {
+		return nil, fmt.Errorf("config: BEST_MOVE_THRESHOLD: %w", err)
+	}
+	if c.BestMoveThreshold <= 0 || c.BestMoveThreshold >= 1 {
+		return nil, fmt.Errorf("config: BEST_MOVE_THRESHOLD must be between 0 and 1, got %v", c.BestMoveThreshold)
 	}
 	return c, nil
 }

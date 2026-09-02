@@ -28,6 +28,13 @@ const (
 
 	// KindTarget fires when the price crosses the target the user set.
 	KindTarget Kind = "target"
+
+	// KindBestDrop and KindBestRise report that the cheapest offer a watch
+	// can find has moved. Unlike the rules above they say nothing about
+	// whether the price is good -- they are the running commentary a tracker
+	// is for, so you hear about movement without having to ask.
+	KindBestDrop Kind = "best_drop"
+	KindBestRise Kind = "best_rise"
 )
 
 // Candidate is an alert the rules think is worth sending.
@@ -68,18 +75,24 @@ type Rules struct {
 	Cooldown time.Duration
 	// ReFireDrop lets a still-falling price break the cooldown, 0.05 = 5%.
 	ReFireDrop float64
+	// BestMoveThreshold is how far a watch's best price must move to be worth
+	// a message, 0.01 = 1%. Below it, ordinary cent-level wobble would
+	// notify on every scan.
+	BestMoveThreshold float64
 }
 
-// DefaultRules returns sensible settings; threshold usually comes from config.
-func DefaultRules(dropThreshold float64) Rules {
+// DefaultRules returns sensible settings; the thresholds usually come from
+// config.
+func DefaultRules(dropThreshold, bestMoveThreshold float64) Rules {
 	return Rules{
-		DropThreshold:   dropThreshold,
-		MedianWindow:    30 * 24 * time.Hour,
-		MinPoints:       5,
-		MinHistoryAge:   12 * time.Hour,
-		MinPointsNewLow: 3,
-		Cooldown:        24 * time.Hour,
-		ReFireDrop:      0.05,
+		DropThreshold:     dropThreshold,
+		MedianWindow:      30 * 24 * time.Hour,
+		MinPoints:         5,
+		MinHistoryAge:     12 * time.Hour,
+		MinPointsNewLow:   3,
+		Cooldown:          24 * time.Hour,
+		ReFireDrop:        0.05,
+		BestMoveThreshold: bestMoveThreshold,
 	}
 }
 
@@ -132,6 +145,32 @@ func (r Rules) Evaluate(offer source.Offer, history []store.PricePoint, target i
 	}
 
 	return out
+}
+
+// BestMove decides whether a watch's new best price is worth reporting,
+// given the best price the user was last told about.
+//
+// Both directions are reported: a rise matters as much as a drop when you are
+// deciding whether to buy now or wait.
+func (r Rules) BestMove(previous, current int64) (Kind, bool) {
+	// Nothing to compare against on a watch's first scan, and nothing to say
+	// when every listing has gone.
+	if previous <= 0 || current <= 0 {
+		return "", false
+	}
+
+	diff := current - previous
+	if diff < 0 {
+		diff = -diff
+	}
+	if float64(diff) < float64(previous)*r.BestMoveThreshold {
+		return "", false
+	}
+
+	if current < previous {
+		return KindBestDrop, true
+	}
+	return KindBestRise, true
 }
 
 // ShouldFire applies the cooldown. lastFired is the zero time when this kind
@@ -206,6 +245,11 @@ func Describe(c Candidate) string {
 		return fmt.Sprintf("menor preço já registrado (antes %s)", source.FormatBRL(c.RefCents))
 	case KindDropVsMedian:
 		return fmt.Sprintf("%d%% abaixo da mediana de 30 dias (%s)", c.Discount(), source.FormatBRL(c.RefCents))
+	case KindBestDrop:
+		return fmt.Sprintf("melhor preço caiu %d%%: era %s",
+			c.Discount(), source.FormatBRL(c.RefCents))
+	case KindBestRise:
+		return fmt.Sprintf("melhor preço subiu: era %s", source.FormatBRL(c.RefCents))
 	case KindSiteFlag:
 		if c.RefCents > c.PriceCents {
 			return fmt.Sprintf("anúncio marcou promoção, preço de referência %s", source.FormatBRL(c.RefCents))

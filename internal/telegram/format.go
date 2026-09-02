@@ -136,13 +136,17 @@ func rank(k tracker.Kind) int {
 		return 1
 	case tracker.KindDropVsMedian:
 		return 2
-	default:
+	case tracker.KindBestDrop:
 		return 3
+	case tracker.KindBestRise:
+		return 4
+	default:
+		return 5
 	}
 }
 
 func digestIcon(alerts []tracker.Alert) string {
-	best := 4
+	best := 6
 	icon := "🔎"
 	for _, a := range alerts {
 		if r := rank(a.Kind); r < best {
@@ -160,6 +164,10 @@ func alertIcon(k tracker.Kind) string {
 		return "🏆"
 	case tracker.KindDropVsMedian:
 		return "🔻"
+	case tracker.KindBestDrop:
+		return "📉"
+	case tracker.KindBestRise:
+		return "📈"
 	default:
 		return "🏷"
 	}
@@ -289,8 +297,13 @@ separados, o bot oferece o filtro em um toque\.
 
 *Alertas*
 
-Queda bem abaixo da mediana de 30 dias, menor preço já registrado, seu
-alvo atingido, ou o anúncio passando a marcar promoção\.`
+Você recebe uma mensagem quando o melhor preço de uma busca sobe ou desce
+mais de 1%, e também quando: cai bem abaixo da mediana de 30 dias, bate o
+menor preço já registrado, atinge seu alvo, ou o anúncio passa a marcar
+promoção\.
+
+Descontos anunciados são conferidos: quando o valor riscado é só o mesmo
+produto parcelado \(10x R$ 449,90 \= R$ 4\.499\), não conta como promoção\.`
 
 func bold(s string) string { return "*" + esc(s) + "*" }
 

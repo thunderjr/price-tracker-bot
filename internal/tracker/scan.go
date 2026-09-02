@@ -43,6 +43,8 @@ type Result struct {
 	// Pruned is how many already-tracked listings were dropped because they
 	// no longer pass the watch's filters.
 	Pruned int
+	// BestCents is the cheapest price the watch can currently find.
+	BestCents int64
 	// Suggestion, when set, is a price floor worth offering the user because
 	// the results fell into two distant groups.
 	Suggestion int64
@@ -159,10 +161,61 @@ func (t *Tracker) Scan(ctx context.Context, w store.Watch) (*Result, error) {
 	}
 	res.Tracked = len(tracked)
 
+	// WatchOffers returns the cheapest first, so this is the watch's best
+	// price right now.
+	if len(tracked) > 0 {
+		res.BestCents = tracked[0].PriceCents
+		move, err := t.reportBestMove(ctx, w, tracked[0])
+		if err != nil {
+			return res, err
+		}
+		if move != nil {
+			res.Alerts = append(res.Alerts, *move)
+		}
+	}
+
 	if err := t.store.MarkWatchScanned(ctx, w.ID, now); err != nil {
 		return res, err
 	}
 	return res, nil
+}
+
+// reportBestMove notifies when the watch's cheapest offer has moved since the
+// last time the user heard about it, and remembers the new figure.
+//
+// The comparison is against what was last *reported*, not against the previous
+// scan, so a slow slide is announced once it adds up rather than never, and a
+// price that keeps flapping between two values does not notify twice.
+func (t *Tracker) reportBestMove(ctx context.Context, w store.Watch, best store.WatchOffer) (*Alert, error) {
+	previous := w.NotifiedBestCents
+
+	kind, ok := t.rules.BestMove(previous, best.PriceCents)
+	if !ok {
+		// Still worth remembering the first best price, so the next move has
+		// something to be measured against.
+		if previous == 0 && best.PriceCents > 0 {
+			return nil, t.store.SetNotifiedBest(ctx, w.ID, best.PriceCents)
+		}
+		return nil, nil
+	}
+
+	if err := t.store.SetNotifiedBest(ctx, w.ID, best.PriceCents); err != nil {
+		return nil, err
+	}
+	if err := t.store.RecordAlert(ctx, w.ID, best.ID, string(kind), best.PriceCents, time.Now()); err != nil {
+		return nil, err
+	}
+
+	return &Alert{
+		Candidate: Candidate{
+			Kind:       kind,
+			PriceCents: best.PriceCents,
+			RefCents:   previous,
+			Confident:  true,
+		},
+		Watch:   w,
+		Product: best.Product,
+	}, nil
 }
 
 // filterOptions maps a watch's settings onto the relevance filter.

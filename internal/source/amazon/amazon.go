@@ -219,7 +219,18 @@ func parseResult(sel *goquery.Selection) (source.Offer, bool) {
 		return source.Offer{}, false // sponsored shells and out-of-stock cards
 	}
 
-	listCents := source.ParseBRL(sel.Find(`[data-cy="price-recipe"] .a-text-price > .a-offscreen`).First().Text())
+	// Only a struck-through figure is a candidate former price. The other
+	// .a-text-price in the recipe is the per-instalment amount ("em até 10x
+	// de R$ 449,90"), which is far below the price and never a reference.
+	listCents := source.ParseBRL(
+		sel.Find(`[data-cy="price-recipe"] .a-text-price[data-a-strike="true"] > .a-offscreen`).First().Text())
+
+	plan := source.ParseInstallments(text(sel.Find(`[data-cy="price-recipe"]`).First()))
+	if plan.IsInstallmentTotal(listCents) {
+		// Not a former price: the same item paid in instalments. Keeping it
+		// would post a discount that never expires.
+		listCents = 0
+	}
 	if listCents <= priceCents {
 		listCents = 0
 	}
@@ -253,6 +264,7 @@ func parseResult(sel *goquery.Selection) (source.Offer, bool) {
 		PriceCents:     priceCents,
 		ListPriceCents: listCents,
 		Rating:         parseRating(text(sel.Find(".a-icon-alt").First())),
+		Installments:   plan,
 		SiteFlags:      dedupe(flags),
 	}, true
 }

@@ -48,10 +48,10 @@ func TestLiveScanEndToEnd(t *testing.T) {
 	// marketplaces; the repeat-scan phases use Mercado Livre alone, because
 	// four Amazon searches inside a minute is a request pattern Amazon
 	// answers with a captcha -- and rightly so. The real bot scans every 3h.
-	both := New(st, DefaultRules(0.10), slog.Default(), meli.New(chrome), amazon.New(nil))
+	both := New(st, DefaultRules(0.10, 0.01), slog.Default(), meli.New(chrome), amazon.New(nil))
 	both.pace = 3 * time.Second
 
-	tr := New(st, DefaultRules(0.10), slog.Default(), meli.New(chrome))
+	tr := New(st, DefaultRules(0.10, 0.01), slog.Default(), meli.New(chrome))
 	tr.pace = time.Second
 
 	w, err := st.CreateWatch(ctx, 1, store.WatchSpec{Query: liveQuery, TargetCents: 0})

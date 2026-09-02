@@ -65,6 +65,7 @@ const extractJS = `(() => {
       price: money(li, ".poly-price__current") || money(li, ".poly-component__price"),
       list_price: money(li, "s.andes-money-amount--previous"),
       rating: text(li.querySelector(".poly-reviews__rating")),
+      installments: text(li.querySelector(".poly-price__installments")),
       international: !!cbt,
       site_flags: flags,
     };
@@ -123,6 +124,7 @@ type rawOffer struct {
 	Price         string   `json:"price"`
 	ListPrice     string   `json:"list_price"`
 	Rating        string   `json:"rating"`
+	Installments  string   `json:"installments"`
 	International bool     `json:"international"`
 	SiteFlags     []string `json:"site_flags"`
 }
@@ -183,7 +185,15 @@ func (r rawOffer) toOffer() (source.Offer, bool) {
 		return source.Offer{}, false
 	}
 
+	// The struck "Antes:" figure is often just this item paid in
+	// instalments -- "ou R$ 4.599,90 em 10x R$ 459,99" -- and ten times
+	// 459,99 is 4.599,90. Reporting that as a discount would mark almost
+	// every listing permanently on sale.
+	plan := source.ParseInstallments(r.Installments)
 	list := source.ParseBRL(r.ListPrice)
+	if plan.IsInstallmentTotal(list) {
+		list = 0
+	}
 	if list <= price {
 		list = 0
 	}
@@ -198,6 +208,7 @@ func (r rawOffer) toOffer() (source.Offer, bool) {
 		PriceCents:     price,
 		ListPriceCents: list,
 		Rating:         parseRating(r.Rating),
+		Installments:   plan,
 		International:  r.International,
 		SiteFlags:      cleanFlags(r.SiteFlags),
 	}, true

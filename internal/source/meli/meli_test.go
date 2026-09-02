@@ -99,3 +99,71 @@ func TestToOfferIgnoresNonDiscountListPrice(t *testing.T) {
 		t.Errorf("ListPriceCents = %d, want 0", o.ListPriceCents)
 	}
 }
+
+// Mercado Livre's struck "Antes:" figure is usually the same item paid in
+// instalments, so reading it as a former price marks nearly every listing
+// permanently on sale.
+func TestToOfferRejectsInstallmentTotal(t *testing.T) {
+	r := rawOffer{
+		Title:        "Console Playstation 5 Slim",
+		URL:          "https://www.mercadolivre.com.br/x/p/MLB1",
+		Price:        "4.047",
+		ListPrice:    "4.599",
+		Installments: "ou R$ 4.599,90 em 10x R$ 459,99 sem juros",
+	}
+
+	o, ok := r.toOffer()
+	if !ok {
+		t.Fatal("toOffer returned false")
+	}
+	if o.ListPriceCents != 0 {
+		t.Errorf("ListPriceCents = %d, want 0: R$ 4.599 is 10 x R$ 459,99",
+			o.ListPriceCents)
+	}
+	if o.Discount() != 0 {
+		t.Errorf("Discount = %d%%, want 0", o.Discount())
+	}
+	if o.Installments.Count != 10 || o.Installments.Each != 45999 {
+		t.Errorf("Installments = %+v, want 10 x R$ 459,99", o.Installments)
+	}
+}
+
+// A genuine markdown must survive: R$ 4.899 before, R$ 4.599 now, financed on
+// the current price.
+func TestToOfferKeepsGenuineFormerPrice(t *testing.T) {
+	r := rawOffer{
+		Title:        "Console Playstation 5 Slim",
+		URL:          "https://www.mercadolivre.com.br/x/p/MLB1",
+		Price:        "4.599",
+		ListPrice:    "4.899",
+		Installments: "12x R$ 383,25 sem juros",
+	}
+
+	o, ok := r.toOffer()
+	if !ok {
+		t.Fatal("toOffer returned false")
+	}
+	if o.ListPriceCents != 489900 {
+		t.Errorf("ListPriceCents = %d, want 489900", o.ListPriceCents)
+	}
+	if o.Discount() != 6 {
+		t.Errorf("Discount = %d%%, want 6", o.Discount())
+	}
+}
+
+// "ou R$ 5.499 em outros meios" is what the item costs paid another way. It is
+// higher than the shown price and is not a former price either.
+func TestToOfferRejectsOtherPaymentTotal(t *testing.T) {
+	r := rawOffer{
+		Title:        "Console Playstation 5 Slim",
+		URL:          "https://www.mercadolivre.com.br/x/p/MLB1",
+		Price:        "5.199",
+		ListPrice:    "5.499",
+		Installments: "ou R$ 5.499 em outros meios",
+	}
+
+	o, _ := r.toOffer()
+	if o.ListPriceCents != 0 {
+		t.Errorf("ListPriceCents = %d, want 0", o.ListPriceCents)
+	}
+}

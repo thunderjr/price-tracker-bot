@@ -47,7 +47,7 @@ func newTracker(t *testing.T, sources ...source.Source) (*Tracker, *store.Store)
 	t.Cleanup(func() { st.Close() })
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	tr := New(st, DefaultRules(0.10), log, sources...)
+	tr := New(st, DefaultRules(0.10, 0.01), log, sources...)
 	tr.pace = 0 // tests must not sleep
 	return tr, st
 }
@@ -470,4 +470,130 @@ func TestScanFoundIsNotTracked(t *testing.T) {
 	if res.Skipped["amazon"] == nil {
 		t.Error("blocked source not reported in Skipped")
 	}
+}
+
+// The gap that meant no notifications ever arrived: scheduled scans only spoke
+// up for the four judgement rules, none of which fire on ordinary movement, so
+// a watch could shift hundreds of reais in silence.
+func TestScanNotifiesOnBestPriceMove(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeSource{name: "meli", batches: [][]source.Offer{
+		{offer("meli", "MLB1", 450000)}, // first sighting: nothing to compare
+		{offer("meli", "MLB1", 430000)}, // -4.4%: worth saying
+		{offer("meli", "MLB1", 429900)}, // -0.02%: not worth saying
+		{offer("meli", "MLB1", 460000)}, // +7%: worth saying
+	}}
+	tr, st := newTracker(t, fake)
+
+	w, _ := st.CreateWatch(ctx, 1, store.WatchSpec{Query: "ps5"})
+
+	reload := func() store.Watch {
+		t.Helper()
+		got, err := st.Watch(ctx, w.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return *got
+	}
+
+	res, err := tr.Scan(ctx, reload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Alerts) != 0 {
+		t.Errorf("first scan announced a move: %v", res.Alerts)
+	}
+	if res.BestCents != 450000 {
+		t.Errorf("BestCents = %d, want 450000", res.BestCents)
+	}
+	if got := reload().NotifiedBestCents; got != 450000 {
+		t.Fatalf("first best price not remembered: %d", got)
+	}
+
+	res, err = tr.Scan(ctx, reload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	drop := findKind(res.Alerts, KindBestDrop)
+	if drop == nil {
+		t.Fatalf("no best_drop after a 4%% fall: %v", res.Alerts)
+	}
+	if drop.PriceCents != 430000 || drop.RefCents != 450000 {
+		t.Errorf("best_drop = %d from %d, want 430000 from 450000", drop.PriceCents, drop.RefCents)
+	}
+
+	res, err = tr.Scan(ctx, reload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findKind(res.Alerts, KindBestDrop) != nil || findKind(res.Alerts, KindBestRise) != nil {
+		t.Errorf("a 0.02%% wobble produced a message: %v", res.Alerts)
+	}
+
+	res, err = tr.Scan(ctx, reload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rise := findKind(res.Alerts, KindBestRise)
+	if rise == nil {
+		t.Fatalf("no best_rise after a 7%% climb: %v", res.Alerts)
+	}
+	// Measured against what was last reported, not the wobble in between.
+	if rise.RefCents != 430000 {
+		t.Errorf("best_rise compared against %d, want the last reported 430000", rise.RefCents)
+	}
+}
+
+// A move is announced once, not on every scan that still sees the new price.
+func TestScanAnnouncesEachMoveOnce(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeSource{name: "meli", batches: [][]source.Offer{
+		{offer("meli", "MLB1", 450000)},
+		{offer("meli", "MLB1", 400000)},
+	}}
+	tr, st := newTracker(t, fake)
+
+	w, _ := st.CreateWatch(ctx, 1, store.WatchSpec{Query: "ps5"})
+	for range 4 {
+		got, err := st.Watch(ctx, w.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := tr.Scan(ctx, *got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := countKind(res.Alerts, KindBestDrop); n > 1 {
+			t.Fatalf("%d best_drop alerts in one scan", n)
+		}
+	}
+
+	// The price settled at 400000 and stayed there; only the move itself
+	// should have been reported.
+	final, err := st.Watch(ctx, w.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.NotifiedBestCents != 400000 {
+		t.Errorf("NotifiedBestCents = %d, want 400000", final.NotifiedBestCents)
+	}
+}
+
+func findKind(alerts []Alert, k Kind) *Alert {
+	for i := range alerts {
+		if alerts[i].Kind == k {
+			return &alerts[i]
+		}
+	}
+	return nil
+}
+
+func countKind(alerts []Alert, k Kind) int {
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == k {
+			n++
+		}
+	}
+	return n
 }

@@ -141,3 +141,53 @@ func TestSearchURL(t *testing.T) {
 		t.Errorf("SearchURL = %q, want %q", got, want)
 	}
 }
+
+// Amazon strikes a figure beside the cash price that is usually the same item
+// paid in instalments: "R$ 4.184,06 à vista no Pix ou NuPay ou em até 10x de
+// R$ 449,90", struck "R$ 4.499,00" -- and ten times 449,90 is 4.499,00. Read
+// as a former price it invents a discount that never expires.
+func TestParseRejectsInstallmentTotals(t *testing.T) {
+	offers, err := Parse(fixture(t, "ps5.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var withRef int
+	for _, o := range offers {
+		if o.ListPriceCents == 0 {
+			continue
+		}
+		withRef++
+
+		if o.Installments.IsInstallmentTotal(o.ListPriceCents) {
+			t.Errorf("%s: kept R$ %s as a former price, but it is %d x %s",
+				o.ExternalID, source.FormatBRL(o.ListPriceCents),
+				o.Installments.Count, source.FormatBRL(o.Installments.Each))
+		}
+	}
+
+	// The fixture has 26 struck figures; 17 are financing totals. Losing all
+	// of them would mean the check is too eager, keeping all of them means it
+	// never fires.
+	if withRef == 0 {
+		t.Error("no reference price survived; genuine markdowns are being discarded")
+	}
+	if withRef > 12 {
+		t.Errorf("%d reference prices survived, want ~9: financing totals are leaking through", withRef)
+	}
+	t.Logf("%d of %d offers keep a reference price", withRef, len(offers))
+}
+
+// The per-instalment amount must never be mistaken for a reference price.
+func TestParseIgnoresPerInstallmentAmount(t *testing.T) {
+	offers, err := Parse(fixture(t, "ps5.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range offers {
+		if o.ListPriceCents > 0 && o.ListPriceCents < o.PriceCents {
+			t.Errorf("%s: reference %s is below the price %s", o.ExternalID,
+				source.FormatBRL(o.ListPriceCents), source.FormatBRL(o.PriceCents))
+		}
+	}
+}

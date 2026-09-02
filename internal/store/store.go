@@ -27,6 +27,7 @@ var migrations = []string{
 	`ALTER TABLE products ADD COLUMN international INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE watches ADD COLUMN allow_international INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE watches ADD COLUMN require_terms TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE watches ADD COLUMN notified_best_cents INTEGER NOT NULL DEFAULT 0`,
 }
 
 // ErrNotFound is returned when a lookup by id matches nothing.
@@ -47,6 +48,10 @@ type Watch struct {
 	Exclude []string
 	// Require drops listings whose title lacks any of these terms.
 	Require []string
+	// NotifiedBestCents is the best price the user was last told about. It is
+	// what makes "the best price moved" notifiable exactly once per move,
+	// instead of on every scan that still sees the new price.
+	NotifiedBestCents int64
 	// AllowInternational keeps cross-border listings, which are dropped by
 	// default because their price excludes Brazilian import tax.
 	AllowInternational bool
@@ -209,6 +214,12 @@ func (s *Store) RenameWatch(ctx context.Context, id int64, query string) error {
 	return s.exec(ctx, "rename watch", `UPDATE watches SET query = ? WHERE id = ?`, query, id)
 }
 
+// SetNotifiedBest records the best price the user has been told about.
+func (s *Store) SetNotifiedBest(ctx context.Context, id, cents int64) error {
+	return s.exec(ctx, "set notified best",
+		`UPDATE watches SET notified_best_cents = ? WHERE id = ?`, cents, id)
+}
+
 // SetWatchRequire replaces the terms a watch's listings must contain.
 func (s *Store) SetWatchRequire(ctx context.Context, id int64, terms []string) error {
 	return s.exec(ctx, "set watch require",
@@ -246,7 +257,7 @@ func (s *Store) DeleteWatch(ctx context.Context, id int64) error {
 const selectWatch = `
 	SELECT id, chat_id, query, COALESCE(target_cents, 0), COALESCE(min_cents, 0), COALESCE(max_cents, 0),
 	       COALESCE(exclude_terms, ''), COALESCE(require_terms, ''), COALESCE(allow_international, 0),
-	       active, created_at,
+	       COALESCE(notified_best_cents, 0), active, created_at,
 	       COALESCE(last_scan_at, '')
 	FROM watches`
 
@@ -274,7 +285,7 @@ func scanWatchInto(row rowScanner) (Watch, error) {
 		lastScan string
 	)
 	if err := row.Scan(&w.ID, &w.ChatID, &w.Query, &w.TargetCents, &w.MinCents, &w.MaxCents,
-		&exclude, &require, &intl, &active, &created, &lastScan); err != nil {
+		&exclude, &require, &intl, &w.NotifiedBestCents, &active, &created, &lastScan); err != nil {
 		return Watch{}, err
 	}
 	w.Exclude = splitTerms(exclude)
