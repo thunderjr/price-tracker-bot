@@ -256,21 +256,42 @@ func TestScanTargetAlert(t *testing.T) {
 
 func TestShouldRecordHeartbeat(t *testing.T) {
 	n := time.Now()
+	point := func(mutate func(*store.PricePoint)) store.PricePoint {
+		p := store.PricePoint{PriceCents: 100, SeenAt: n}
+		if mutate != nil {
+			mutate(&p)
+		}
+		return p
+	}
+
 	hist := []store.PricePoint{{PriceCents: 100, SeenAt: n.Add(-25 * time.Hour)}}
-	if !shouldRecord(hist, source.Offer{PriceCents: 100}, n) {
+	if !shouldRecord(hist, point(nil)) {
 		t.Error("no heartbeat point after 25h of an unchanged price")
 	}
 
 	fresh := []store.PricePoint{{PriceCents: 100, SeenAt: n.Add(-time.Hour)}}
-	if shouldRecord(fresh, source.Offer{PriceCents: 100}, n) {
+	if shouldRecord(fresh, point(nil)) {
 		t.Error("recorded a redundant point an hour after the last one")
 	}
-	if !shouldRecord(fresh, source.Offer{PriceCents: 99}, n) {
+	if !shouldRecord(fresh, point(func(p *store.PricePoint) { p.PriceCents = 99 })) {
 		t.Error("a price change was not recorded")
 	}
 	// A promotion appearing at the same price is still a change worth keeping.
-	if !shouldRecord(fresh, source.Offer{PriceCents: 100, ListPriceCents: 200}, n) {
+	if !shouldRecord(fresh, point(func(p *store.PricePoint) { p.ListPriceCents = 200 })) {
 		t.Error("a new reference price was not recorded")
+	}
+
+	// Financing is part of the price, so a change in the terms alone has to be
+	// recorded -- otherwise the bot keeps quoting plans the listing withdrew.
+	for name, mutate := range map[string]func(*store.PricePoint){
+		"plan length": func(p *store.PricePoint) { p.InstallmentCount = 10 },
+		"per-payment": func(p *store.PricePoint) { p.InstallmentEachCents = 12 },
+		"interest":    func(p *store.PricePoint) { p.InstallmentInterest = "com juros" },
+		"other means": func(p *store.PricePoint) { p.OtherMeansCents = 150 },
+	} {
+		if !shouldRecord(fresh, point(mutate)) {
+			t.Errorf("a change of %s was not recorded", name)
+		}
 	}
 }
 

@@ -440,18 +440,18 @@ func (t *Tracker) record(ctx context.Context, w store.Watch, o source.Offer, now
 		return nil, err
 	}
 
-	if shouldRecord(history, o, now) {
-		point := store.PricePoint{
-			ProductID:            id,
-			PriceCents:           o.PriceCents,
-			ListPriceCents:       o.ListPriceCents,
-			SiteFlags:            o.SiteFlags,
-			InstallmentCount:     o.Installments.Count,
-			InstallmentEachCents: o.Installments.Each,
-			InstallmentInterest:  string(o.Installments.Interest),
-			OtherMeansCents:      o.Installments.OtherMeansCents,
-			SeenAt:               now,
-		}
+	point := store.PricePoint{
+		ProductID:            id,
+		PriceCents:           o.PriceCents,
+		ListPriceCents:       o.ListPriceCents,
+		SiteFlags:            o.SiteFlags,
+		InstallmentCount:     o.Installments.Count,
+		InstallmentEachCents: o.Installments.Each,
+		InstallmentInterest:  string(o.Installments.Interest),
+		OtherMeansCents:      o.Installments.OtherMeansCents,
+		SeenAt:               now,
+	}
+	if shouldRecord(history, point) {
 		if err := t.store.AddPricePoint(ctx, point); err != nil {
 			return nil, err
 		}
@@ -474,16 +474,26 @@ func (t *Tracker) record(ctx context.Context, w store.Watch, o source.Offer, now
 	return out, nil
 }
 
-// shouldRecord keeps the history readable: a point per change, plus a daily
-// heartbeat so a long flat stretch is still visible as "we kept looking".
-func shouldRecord(history []store.PricePoint, o source.Offer, now time.Time) bool {
+// shouldRecord keeps the history readable: a point per change in what the
+// listing actually offers -- its price, its reference price, or its financing
+// terms -- plus a daily heartbeat so a long flat stretch is still visible as
+// "we kept looking".
+//
+// Financing counts because it is part of the price: a plan going from "sem
+// juros" to "com juros" costs real money at an unchanged headline figure, and
+// a scan that ignored it would keep reporting the stale terms.
+func shouldRecord(history []store.PricePoint, p store.PricePoint) bool {
 	if len(history) == 0 {
 		return true
 	}
 	last := history[len(history)-1]
-	return last.PriceCents != o.PriceCents ||
-		last.ListPriceCents != o.ListPriceCents ||
-		now.Sub(last.SeenAt) >= heartbeat
+	return last.PriceCents != p.PriceCents ||
+		last.ListPriceCents != p.ListPriceCents ||
+		last.InstallmentCount != p.InstallmentCount ||
+		last.InstallmentEachCents != p.InstallmentEachCents ||
+		last.InstallmentInterest != p.InstallmentInterest ||
+		last.OtherMeansCents != p.OtherMeansCents ||
+		p.SeenAt.Sub(last.SeenAt) >= heartbeat
 }
 
 // wait pauses between source queries, jittered so our traffic does not arrive
