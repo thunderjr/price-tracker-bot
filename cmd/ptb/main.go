@@ -1,5 +1,5 @@
-// Command ptb tracks prices and promotions on Mercado Livre and Amazon Brazil
-// and reports them through a Telegram bot.
+// Command ptb tracks prices and promotions on Mercado Livre, Amazon Brazil and
+// KaBuM!, and reports them through a Telegram bot.
 package main
 
 import (

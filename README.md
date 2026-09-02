@@ -1,7 +1,8 @@
 # price-tracker-bot
 
 Telegram bot that tracks prices, promotions and offers for free-text queries
-("ps5", "LEGO Millennium Falcon") on **Mercado Livre** and **Amazon Brasil**.
+("ps5", "LEGO Millennium Falcon") on **Mercado Livre**, **Amazon Brasil** and
+**KaBuM!**.
 
 ```
 /track ps5 | max 3500     start tracking, with an optional target price
@@ -26,11 +27,17 @@ make logs
 
 Then message the bot: `/track ps5`.
 
-## How the two sources work, and why they differ
+## How the three sources work, and why they differ
 
 **Amazon BR** is scraped over plain HTTP with `net/http` + goquery. It serves
 complete server-rendered search results to an ordinary client with a desktop
 User-Agent — no browser needed, ~1 second per query.
+
+**KaBuM!** also needs no browser, and gives up something better than markup: its
+search page is a Next.js app whose `__NEXT_DATA__` script carries the entire
+result set as JSON, so offers are read from structured fields instead of CSS
+selectors. Two things about it are worth knowing before you touch that source —
+both are covered in *KaBuM! quirks* below.
 
 **Mercado Livre** needs a real browser, and this is the load-bearing constraint
 of the whole project:
@@ -112,6 +119,54 @@ responses:
 `ErrThrottled` satisfies `errors.Is(err, ErrBlocked)`, so callers that only care
 "this source gave nothing" are unaffected. The live test skips a throttled
 source and fails on a blocked one, so a redesign can never hide behind retries.
+
+## KaBuM! quirks
+
+**Its catalogue API is not usable for this.** There is a public endpoint at
+`servicespub.prod.api.aws.grupokabum.com.br/catalog/v2/products?query=…`, and it
+only answers for queries that resolve to a category. `playstation 5` works;
+`lego millennium falcon` comes back `CATALOG_NOT_MATCH` even though the site
+search finds real LEGO sets for it. This bot tracks arbitrary free-text
+queries, so the search page is the only endpoint that can serve them.
+
+**It never reports an empty search.** A query matching nothing is padded with
+unrelated recommendations rather than returning zero results — `zzqqxxnaoexiste`
+still claims 14,400 items and fills a page with phone screen protectors and
+desks. So there is no such thing here as a legitimately empty result page: a
+missing payload means blocked or redesigned, never "no results". The relevance
+filter is what keeps that padding out of a watch.
+
+**Its prices arrive as 32-bit floats.** The same figure shows up on one page as
+both `127.96` and `127.95999908447266`, and R$ 1.943,33 as `1943.3299560546875`.
+Money in this codebase is `int64` cents and no float ever touches it, so the
+JSON number is kept as its literal text (`json.Number`) and rounded half-up on
+the third decimal. `ParseBRL` cannot do this job: it reads `.` as a pt-BR
+thousands separator once there are more than two decimals, which turns that
+first figure into R$ 127.959.999.084.472,66 — large enough, incidentally, to
+overflow the tolerance arithmetic that would otherwise have caught it.
+
+**Its instalment line goes stale when a seller re-prices.** Caught live during
+this source's first container run: two marketplace listings had moved to
+R$ 6.509,90 and R$ 7.079,90 on the card while `maxInstallment` still read
+"10x de R$ 420,94" and "10x de R$ 482,41". Both halves of that payload are
+traps. Financing is never cheaper than the card price, so a plan totalling less
+than it is stale rather than a bargain — and in `parcelado` mode the watch ranks
+on the plan total, so publishing it would have put the dearest console on the
+page at the top of the list at a phantom R$ 4.209,40. A plan that does not total
+the card price is therefore discarded, and a plan totalling *more* is kept and
+labelled `com juros`, because that direction really is interest.
+
+The same staleness is why `oldPrice` is judged against the card price directly
+rather than against the plan total the way Amazon's struck figure is: `oldPrice`
+is a former price only when it sits *above* the card price. Equal to it — the
+usual case — it is the card price restated, and calling that a markdown turns
+the Pix discount into a permanent 5–7% "discount" on nearly every listing.
+
+**Its product descriptions break the JSON.** They are HTML pasted in with the
+newlines intact, and a literal newline inside a JSON string is invalid —
+`encoding/json` rejects the whole document, which would drop every offer on the
+page over a field the source never even reads. Bytes below `0x20` are never
+legal there, so they are blanked before decoding.
 
 ## What gets tracked, and what gets dropped
 
@@ -213,6 +268,18 @@ Every way to pay is listed, interest-bearing plans included. Mercado Livre
 prints "sem juros" only when a plan really is free and writes nothing at all
 otherwise, so a plan whose instalments add up to more than the cash price is
 labelled `com juros` from its own arithmetic — silence would read as free.
+
+KaBuM! needs the opposite reading, and it is the same offer that shows why. It
+never writes "juros" anywhere on a search page, but it publishes both figures as
+fields: a card price and a lower cash price for Pix. Its plans total the card
+price to the cent, so the plan is free and the gap down to the cash price is a
+Pix discount, not financing cost. Comparing against the cash price the way
+Mercado Livre demands would label all 60 plans on a "playstation 5" page
+`com juros` — and contradict Amazon, which sells that console at the very same
+three numbers (R$ 4.184 cash, R$ 4.499 on the card, 10x R$ 449,90) and prints
+"sem juros" outright. So a source that states the wording is believed, a source
+that publishes a reference price is measured against it, and only Mercado
+Livre's silence is read as interest.
 
 ## À vista or parcelado
 
