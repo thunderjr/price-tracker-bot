@@ -1,6 +1,11 @@
 package meli
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/thunderjr/price-tracker-bot/internal/browser"
+)
 
 func TestSlug(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
@@ -165,5 +170,38 @@ func TestToOfferRejectsOtherPaymentTotal(t *testing.T) {
 	o, _ := r.toOffer()
 	if o.ListPriceCents != 0 {
 		t.Errorf("ListPriceCents = %d, want 0", o.ListPriceCents)
+	}
+}
+
+// The in-page readiness check used to look for the bare word "verificar",
+// which is ordinary Portuguese and turns up in real page furniture: any search
+// whose grid had not painted yet could be reported as blocked. The markers now
+// come from one place, and this pins them there.
+func TestReadyJSUsesTheSharedBlockMarkers(t *testing.T) {
+	markers := browser.BlockedMarkers()
+	if len(markers) == 0 {
+		t.Fatal("browser package reports no block markers")
+	}
+
+	for _, m := range markers {
+		if !strings.Contains(readyJS, m) {
+			t.Errorf("readyJS does not test for %q", m)
+		}
+	}
+
+	// Words that are not specific to an interstitial must not be in there.
+	for _, loose := range []string{"verificar", "Algo sali"} {
+		if strings.Contains(readyJS, loose) {
+			t.Errorf("readyJS still matches the non-specific %q", loose)
+		}
+	}
+}
+
+func TestBuildReadyJSEscapesMarkers(t *testing.T) {
+	js := buildReadyJS([]string{`say "no"`, `back\slash`})
+	for _, want := range []string{`say \"no\"`, `back\\slash`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("buildReadyJS did not escape into %q:\n%s", want, js)
+		}
 	}
 }

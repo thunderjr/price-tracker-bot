@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,12 @@ var blockedMarkers = []string{
 	"Hubo un error accediendo a esta pagina",
 	"suspicious-traffic",
 	"account-verification",
+}
+
+// BlockedMarkers returns the interstitial fingerprints, so a scraper checking
+// the same thing in-page cannot drift from this list.
+func BlockedMarkers() []string {
+	return slices.Clone(blockedMarkers)
 }
 
 // IsBlockedPage reports whether page content is an anti-bot interstitial

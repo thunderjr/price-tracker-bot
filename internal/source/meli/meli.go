@@ -8,6 +8,7 @@ package meli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -74,13 +75,27 @@ const extractJS = `(() => {
 
 // readyJS resolves once the grid has rendered or the anti-bot page is up, so a
 // block is reported in seconds instead of waiting out the whole timeout.
-const readyJS = `(() => {
+//
+// The block markers come from the browser package rather than being written
+// out here. They used to include the bare word "verificar", which is ordinary
+// Portuguese and appears in plenty of real page furniture -- any search whose
+// grid had not painted yet could be called blocked.
+var readyJS = buildReadyJS(browser.BlockedMarkers())
+
+func buildReadyJS(markers []string) string {
+	quoted, err := json.Marshal(markers)
+	if err != nil {
+		panic("meli: encode block markers: " + err.Error())
+	}
+
+	return `(() => {
   if (document.querySelectorAll("ol.ui-search-layout > li").length > 0) return "ok";
-  const body = document.body ? document.body.innerText : "";
-  if (/Hubo un error accediendo|Algo sali|verificar/i.test(body)) return "blocked";
+  const html = document.documentElement ? document.documentElement.outerHTML : "";
+  if (` + string(quoted) + `.some((m) => html.includes(m))) return "blocked";
   if (document.querySelector(".ui-search-rescue, .ui-empty-state")) return "empty";
   return "";
 })()`
+}
 
 const (
 	readyPollInterval = 400 * time.Millisecond
