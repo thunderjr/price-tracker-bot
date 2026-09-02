@@ -12,6 +12,7 @@ import (
 	"github.com/thunderjr/price-tracker-bot/internal/config"
 	"github.com/thunderjr/price-tracker-bot/internal/source"
 	"github.com/thunderjr/price-tracker-bot/internal/source/amazon"
+	"github.com/thunderjr/price-tracker-bot/internal/source/kabum"
 	"github.com/thunderjr/price-tracker-bot/internal/source/meli"
 	"github.com/thunderjr/price-tracker-bot/internal/store"
 	"github.com/thunderjr/price-tracker-bot/internal/telegram"
@@ -39,7 +40,7 @@ func runServe(cfg *config.Config) error {
 	})
 	defer chrome.Close()
 
-	sources := []source.Source{meli.New(chrome), amazon.New(nil)}
+	sources := []source.Source{meli.New(chrome), amazon.New(nil), kabum.New(nil)}
 	trk := tracker.New(st, tracker.DefaultRules(cfg.DropThreshold, cfg.BestMoveThreshold), slog.Default(), sources...)
 
 	bot, err := telegram.New(cfg, st, trk, slog.Default())

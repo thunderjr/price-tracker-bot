@@ -21,6 +21,7 @@ import (
 	"github.com/thunderjr/price-tracker-bot/internal/browser"
 	"github.com/thunderjr/price-tracker-bot/internal/source"
 	"github.com/thunderjr/price-tracker-bot/internal/source/amazon"
+	"github.com/thunderjr/price-tracker-bot/internal/source/kabum"
 	"github.com/thunderjr/price-tracker-bot/internal/source/meli"
 	"github.com/thunderjr/price-tracker-bot/internal/store"
 )
@@ -44,11 +45,12 @@ func TestLiveScanEndToEnd(t *testing.T) {
 	}
 	defer st.Close()
 
-	// Two trackers over one store. The first phase exercises both
-	// marketplaces; the repeat-scan phases use Mercado Livre alone, because
-	// four Amazon searches inside a minute is a request pattern Amazon
-	// answers with a captcha -- and rightly so. The real bot scans every 3h.
-	both := New(st, DefaultRules(0.10, 0.01), slog.Default(), meli.New(chrome), amazon.New(nil))
+	// Two trackers over one store. The first phase exercises all three
+	// sources; the repeat-scan phases use Mercado Livre alone, because four
+	// Amazon searches inside a minute is a request pattern Amazon answers
+	// with a captcha -- and rightly so. The real bot scans every 3h.
+	both := New(st, DefaultRules(0.10, 0.01), slog.Default(),
+		meli.New(chrome), amazon.New(nil), kabum.New(nil))
 	both.pace = 3 * time.Second
 
 	tr := New(st, DefaultRules(0.10, 0.01), slog.Default(), meli.New(chrome))
@@ -103,7 +105,7 @@ func TestLiveScanEndToEnd(t *testing.T) {
 			t.Errorf("%s/%s stored without a title or url", o.Source, o.ExternalID)
 		}
 	}
-	for _, want := range []string{meli.Name, amazon.Name} {
+	for _, want := range []string{meli.Name, amazon.Name, kabum.Name} {
 		if bySource[want] == 0 && res.Skipped[want] == nil {
 			t.Errorf("no offers stored from %s", want)
 		}
@@ -190,4 +192,7 @@ func TestLiveScanEndToEnd(t *testing.T) {
 	}
 }
 
-var _ source.Source = (*amazon.Source)(nil)
+var (
+	_ source.Source = (*amazon.Source)(nil)
+	_ source.Source = (*kabum.Source)(nil)
+)

@@ -16,6 +16,7 @@ import (
 	"github.com/thunderjr/price-tracker-bot/internal/config"
 	"github.com/thunderjr/price-tracker-bot/internal/source"
 	"github.com/thunderjr/price-tracker-bot/internal/source/amazon"
+	"github.com/thunderjr/price-tracker-bot/internal/source/kabum"
 	"github.com/thunderjr/price-tracker-bot/internal/source/meli"
 	"github.com/thunderjr/price-tracker-bot/internal/store"
 	"github.com/thunderjr/price-tracker-bot/internal/telegram"
@@ -296,7 +297,7 @@ func runScan(cfg *config.Config, args []string) error {
 	defer chrome.Close()
 
 	trk := tracker.New(st, tracker.DefaultRules(cfg.DropThreshold, cfg.BestMoveThreshold), slog.Default(),
-		meli.New(chrome), amazon.New(nil))
+		meli.New(chrome), amazon.New(nil), kabum.New(nil))
 
 	var bot *telegram.Bot
 	if *notify {

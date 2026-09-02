@@ -528,3 +528,18 @@ func TestDetailKeyboardModeButtonNamesTheSwitch(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceLabel(t *testing.T) {
+	cases := map[string]string{
+		"meli":   "Mercado Livre",
+		"amazon": "Amazon",
+		"kabum":  "KaBuM!",
+		// An unknown source still has to render as something.
+		"novo": "novo",
+	}
+	for in, want := range cases {
+		if got := sourceLabel(in); got != want {
+			t.Errorf("sourceLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

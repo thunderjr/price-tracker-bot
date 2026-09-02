@@ -24,6 +24,8 @@ func sourceLabel(name string) string {
 		return "Mercado Livre"
 	case "amazon":
 		return "Amazon"
+	case "kabum":
+		return "KaBuM!"
 	default:
 		return name
 	}

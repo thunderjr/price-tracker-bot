@@ -18,6 +18,7 @@ import (
 	"github.com/thunderjr/price-tracker-bot/internal/relevance"
 	"github.com/thunderjr/price-tracker-bot/internal/source"
 	"github.com/thunderjr/price-tracker-bot/internal/source/amazon"
+	"github.com/thunderjr/price-tracker-bot/internal/source/kabum"
 	"github.com/thunderjr/price-tracker-bot/internal/source/meli"
 )
 
@@ -40,7 +41,7 @@ func runProbe(cfg *config.Config, args []string) error {
 
 	args = fs.Args()
 	if len(args) < 2 {
-		return errors.New("usage: ptb probe [-json] [-limit N] [-raw] <amazon|meli|all|chrome> <query>")
+		return errors.New("usage: ptb probe [-json] [-limit N] [-raw] <amazon|kabum|meli|all|chrome> <query>")
 	}
 	which, query := args[0], args[1]
 
@@ -53,6 +54,8 @@ func runProbe(cfg *config.Config, args []string) error {
 		return probeChrome(ctx, cfg, query)
 	case "amazon":
 		sources = []source.Source{amazon.New(nil)}
+	case "kabum":
+		sources = []source.Source{kabum.New(nil)}
 	case "meli", "all":
 		b := browser.New(browser.Options{
 			ExecPath: cfg.ChromePath,
@@ -65,10 +68,10 @@ func runProbe(cfg *config.Config, args []string) error {
 
 		sources = []source.Source{meli.New(b)}
 		if which == "all" {
-			sources = append(sources, amazon.New(nil))
+			sources = append(sources, amazon.New(nil), kabum.New(nil))
 		}
 	default:
-		return fmt.Errorf("unknown source %q (want amazon, meli, all or chrome)", which)
+		return fmt.Errorf("unknown source %q (want amazon, kabum, meli, all or chrome)", which)
 	}
 
 	failed := false
