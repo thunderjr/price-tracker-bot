@@ -264,13 +264,13 @@ func (b *Bot) Deliver(ctx context.Context, alerts []tracker.Alert) error {
 		group := byWatch[watchID]
 		w := group[0].Watch
 
-		offers, err := b.store.WatchOffers(ctx, watchID, statsWindow, digestOffers)
+		offers, err := b.store.WatchOffers(ctx, watchID, w.PriceMode, statsWindow, digestOffers)
 		if err != nil {
 			b.log.Error("digest offers failed", "watch", watchID, "err", err)
 			errs = append(errs, err)
 			continue
 		}
-		stats, err := b.store.Stats(ctx, watchID, statsWindow)
+		stats, err := b.store.Stats(ctx, watchID, w.PriceMode, statsWindow)
 		if err != nil {
 			b.log.Error("digest stats failed", "watch", watchID, "err", err)
 			errs = append(errs, err)
@@ -320,14 +320,14 @@ func (b *Bot) loadRow(ctx context.Context, chatID, watchID int64) (watchRow, err
 		return watchRow{}, store.ErrNotFound
 	}
 
-	st, err := b.store.Stats(ctx, w.ID, statsWindow)
+	st, err := b.store.Stats(ctx, w.ID, w.PriceMode, statsWindow)
 	if err != nil {
 		return watchRow{}, err
 	}
 
 	row := watchRow{Watch: *w, Stats: st}
 	if st.Products > 0 {
-		best, err := b.store.WatchOffers(ctx, w.ID, statsWindow, 1)
+		best, err := b.store.WatchOffers(ctx, w.ID, w.PriceMode, statsWindow, 1)
 		if err != nil {
 			return watchRow{}, err
 		}
@@ -346,7 +346,7 @@ func (b *Bot) loadRows(ctx context.Context, chatID int64) ([]watchRow, error) {
 
 	rows := make([]watchRow, 0, len(watches))
 	for _, w := range watches {
-		st, err := b.store.Stats(ctx, w.ID, statsWindow)
+		st, err := b.store.Stats(ctx, w.ID, w.PriceMode, statsWindow)
 		if err != nil {
 			return nil, err
 		}

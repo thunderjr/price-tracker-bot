@@ -26,6 +26,7 @@ const (
 	actDeleteDo    = "xx" // confirmed delete
 	actClose       = "c"  // dismiss the manager
 	actSetFloor    = "f"  // apply a suggested price floor, arg = cents/100
+	actPriceMode   = "m"  // switch between cash and instalment ranking
 	actNoop        = "-"  // inert button
 )
 

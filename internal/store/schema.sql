@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS watches (
     require_terms TEXT NOT NULL DEFAULT '',
     allow_international INTEGER NOT NULL DEFAULT 0,
     notified_best_cents INTEGER NOT NULL DEFAULT 0,
+    price_mode   TEXT    NOT NULL DEFAULT '',
     active       INTEGER NOT NULL DEFAULT 1,
     created_at   TEXT    NOT NULL,
     last_scan_at TEXT,

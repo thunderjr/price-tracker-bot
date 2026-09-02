@@ -80,7 +80,7 @@ func TestScanRecordsOffers(t *testing.T) {
 		t.Errorf("first scan alerted: %v", res.Alerts)
 	}
 
-	offers, err := st.WatchOffers(ctx, w.ID, 30*24*time.Hour, 10)
+	offers, err := st.WatchOffers(ctx, w.ID, store.ModeCash, 30*24*time.Hour, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +332,7 @@ func TestScanPrunesNowFilteredListings(t *testing.T) {
 		}
 	}
 
-	before, err := st.WatchOffers(ctx, w.ID, 30*24*time.Hour, 100)
+	before, err := st.WatchOffers(ctx, w.ID, store.ModeCash, 30*24*time.Hour, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestScanPrunesNowFilteredListings(t *testing.T) {
 		t.Errorf("Pruned = %d, want 1", res.Pruned)
 	}
 
-	after, err := st.WatchOffers(ctx, w.ID, 30*24*time.Hour, 100)
+	after, err := st.WatchOffers(ctx, w.ID, store.ModeCash, 30*24*time.Hour, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestScanPrunesWhatThisScanRejected(t *testing.T) {
 	if _, err := tr.Scan(ctx, *w); err != nil {
 		t.Fatal(err)
 	}
-	before, err := st.WatchOffers(ctx, w.ID, 30*24*time.Hour, 10)
+	before, err := st.WatchOffers(ctx, w.ID, store.ModeCash, 30*24*time.Hour, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +443,7 @@ func TestScanPrunesWhatThisScanRejected(t *testing.T) {
 		t.Errorf("Pruned = %d, want the newly flagged import removed", res.Pruned)
 	}
 
-	after, err := st.WatchOffers(ctx, w.ID, 30*24*time.Hour, 10)
+	after, err := st.WatchOffers(ctx, w.ID, store.ModeCash, 30*24*time.Hour, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestScanKeepsListingWithADuplicateCard(t *testing.T) {
 		t.Errorf("BestCents = %d, want the duplicated listing's 400000", res.BestCents)
 	}
 
-	offers, err := st.WatchOffers(ctx, w.ID, 30*24*time.Hour, 10)
+	offers, err := st.WatchOffers(ctx, w.ID, store.ModeCash, 30*24*time.Hour, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -728,7 +728,7 @@ func TestScanRefusesASecondScanOfTheSameWatch(t *testing.T) {
 		t.Error("the watch is still locked after its scan finished")
 	}
 
-	offers, err := st.WatchOffers(ctx, w.ID, 30*24*time.Hour, 10)
+	offers, err := st.WatchOffers(ctx, w.ID, store.ModeCash, 30*24*time.Hour, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -913,5 +913,119 @@ func TestScanReportsAReturnToTheFloor(t *testing.T) {
 	}
 	if findKind(res.Alerts, KindNewLow) == nil {
 		t.Errorf("a return to the recorded floor went unreported: %v", res.Alerts)
+	}
+}
+
+func hasAlert(alerts []Alert, kind Kind) bool {
+	for _, a := range alerts {
+		if a.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// A watch in "parcelado" mode shops on the financed total, so that is the
+// figure its target has to be measured against. Comparing the cash price
+// instead would announce a target hit the user cannot actually buy at.
+func TestScanTargetUsesThePriceMode(t *testing.T) {
+	ctx := context.Background()
+
+	// Cash 4.100,00 is under the 4.200,00 target, but financing it costs
+	// 12x419,90 = 5.038,80, which is not.
+	financed := offer("meli", "MLB1", 410000)
+	financed.Installments = source.InstallmentPlan{Count: 12, Each: 41990}
+
+	for _, tc := range []struct {
+		mode      store.PriceMode
+		wantAlert bool
+	}{
+		{store.ModeCash, true},
+		{store.ModeInstallment, false},
+	} {
+		t.Run(string(tc.mode)+"/", func(t *testing.T) {
+			fake := &fakeSource{name: "meli", batches: [][]source.Offer{{financed}}}
+			tr, st := newTracker(t, fake)
+
+			w, err := st.CreateWatch(ctx, 1, store.WatchSpec{Query: "ps5", TargetCents: 420000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetWatchPriceMode(ctx, w.ID, tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			w, err = st.Watch(ctx, w.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			res, err := tr.Scan(ctx, *w)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := hasAlert(res.Alerts, KindTarget); got != tc.wantAlert {
+				t.Errorf("target alert = %v, want %v (alerts %v)", got, tc.wantAlert, res.Alerts)
+			}
+		})
+	}
+}
+
+// The watch's best price is reported in its own mode, so "the best price
+// moved" is measured on the figure the user is shopping on.
+func TestScanReportsBestInThePriceMode(t *testing.T) {
+	ctx := context.Background()
+
+	financed := offer("meli", "MLB1", 410000)
+	financed.Installments = source.InstallmentPlan{Count: 10, Each: 45000} // 4.500,00
+
+	fake := &fakeSource{name: "meli", batches: [][]source.Offer{{financed}}}
+	tr, st := newTracker(t, fake)
+
+	w, err := st.CreateWatch(ctx, 1, store.WatchSpec{Query: "ps5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetWatchPriceMode(ctx, w.ID, store.ModeInstallment); err != nil {
+		t.Fatal(err)
+	}
+	w, err = st.Watch(ctx, w.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := tr.Scan(ctx, *w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.BestCents != 450000 {
+		t.Errorf("BestCents = %d, want the financed total 450000", res.BestCents)
+	}
+
+	// And the baseline it remembers is in the same terms, so the next scan
+	// does not read the mode change itself as a price move.
+	after, err := st.Watch(ctx, w.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.NotifiedBestCents != 450000 {
+		t.Errorf("baseline = %d, want 450000", after.NotifiedBestCents)
+	}
+}
+
+// historyInMode must not scribble on the caller's slice: the digest still
+// reports the cash price from the same points.
+func TestHistoryInModeLeavesTheInputAlone(t *testing.T) {
+	history := []store.PricePoint{{PriceCents: 410000, InstallmentCount: 12, InstallmentEachCents: 41990}}
+
+	got := historyInMode(history, store.ModeInstallment)
+	if got[0].PriceCents != 503880 {
+		t.Errorf("restated price = %d, want 12x419,90", got[0].PriceCents)
+	}
+	if history[0].PriceCents != 410000 {
+		t.Errorf("caller's history was mutated to %d", history[0].PriceCents)
+	}
+	// Cash mode has nothing to restate.
+	if same := historyInMode(history, store.ModeCash); same[0].PriceCents != 410000 {
+		t.Errorf("cash mode changed the price to %d", same[0].PriceCents)
 	}
 }

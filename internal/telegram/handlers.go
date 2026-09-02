@@ -117,6 +117,8 @@ func (b *Bot) handleCallback(ctx context.Context, q *models.CallbackQuery) {
 		b.togglePause(ctx, q.ID, chatID, messageID, cb.WatchID, cb.Arg)
 	case actTarget:
 		b.promptTarget(ctx, q.ID, chatID, messageID, cb.WatchID, cb.Arg)
+	case actPriceMode:
+		b.togglePriceMode(ctx, q.ID, chatID, messageID, cb.WatchID, cb.Arg)
 	case actDeleteAsk:
 		b.askDelete(ctx, q.ID, chatID, messageID, cb.WatchID, cb.Arg)
 	case actDeleteDo:
@@ -161,7 +163,7 @@ func (b *Bot) showOffers(ctx context.Context, chatID int64, messageID int, watch
 		return
 	}
 
-	offers, err := b.store.WatchOffers(ctx, watchID, statsWindow, offersShown)
+	offers, err := b.store.WatchOffers(ctx, watchID, row.Watch.PriceMode, statsWindow, offersShown)
 	if err != nil {
 		b.log.Error("watch offers failed", "watch", watchID, "err", err)
 		return
@@ -187,6 +189,37 @@ func (b *Bot) togglePause(ctx context.Context, queryID string, chatID int64, mes
 		b.answer(ctx, queryID, "Pausada.")
 	} else {
 		b.answer(ctx, queryID, "Retomada.")
+	}
+	b.showDetail(ctx, chatID, messageID, watchID, page)
+}
+
+// togglePriceMode flips a watch between ranking on the cash price and ranking
+// on what the instalment plan adds up to.
+//
+// The two orders genuinely differ -- the cheapest cash price is regularly not
+// the cheapest financed one -- so this changes which offers lead the reports
+// and which figure the alerts fire on, not just the wording.
+func (b *Bot) togglePriceMode(ctx context.Context, queryID string, chatID int64, messageID int, watchID, page int64) {
+	row, err := b.row(ctx, chatID, messageID, watchID, page)
+	if err != nil {
+		b.answer(ctx, queryID, "Busca não encontrada.")
+		return
+	}
+
+	next := store.ModeInstallment
+	if row.Watch.PriceMode == store.ModeInstallment {
+		next = store.ModeCash
+	}
+	if err := b.store.SetWatchPriceMode(ctx, watchID, next); err != nil {
+		b.log.Error("set price mode failed", "watch", watchID, "err", err)
+		b.answer(ctx, queryID, "Não consegui alterar.")
+		return
+	}
+
+	if next == store.ModeInstallment {
+		b.answer(ctx, queryID, "Ordenando pelo total parcelado.")
+	} else {
+		b.answer(ctx, queryID, "Ordenando pelo preço à vista.")
 	}
 	b.showDetail(ctx, chatID, messageID, watchID, page)
 }
@@ -432,7 +465,7 @@ func (b *Bot) scanAndReport(watchID, chatID int64) {
 // listings were filtered out and, when the prices split into two clear groups,
 // a button to track only the upper one.
 func (b *Bot) ReportScan(ctx context.Context, w store.Watch, res *tracker.Result) error {
-	offers, err := b.store.WatchOffers(ctx, w.ID, statsWindow, offersShown)
+	offers, err := b.store.WatchOffers(ctx, w.ID, w.PriceMode, statsWindow, offersShown)
 	if err != nil {
 		return err
 	}

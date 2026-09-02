@@ -72,6 +72,12 @@ func formatDigest(w store.Watch, alerts []tracker.Alert, offers []store.WatchOff
 	if headline := summarize(alerts); headline != "" {
 		fmt.Fprintf(&b, "%s\n", headline)
 	}
+	// Say which figure the list is ranked on: the cheapest cash price and the
+	// cheapest financed total are regularly different listings, so an
+	// unexplained order looks wrong.
+	if w.PriceMode == store.ModeInstallment {
+		b.WriteString("💳 _por total parcelado_\n")
+	}
 	b.WriteString("\n")
 
 	if w.TargetCents > 0 {
@@ -88,15 +94,15 @@ func formatDigest(w store.Watch, alerts []tracker.Alert, offers []store.WatchOff
 		if i == digestOffers {
 			break
 		}
-		fmt.Fprintf(&b, "*%s* · %s", money(o.PriceCents), esc(sourceLabel(o.Source)))
+		fmt.Fprintf(&b, "*%s* · %s", money(o.Effective()), esc(sourceLabel(o.Source)))
 		if d := discount(o.PriceCents, o.ListPriceCents); d > 0 {
 			fmt.Fprintf(&b, " · \\-%d%%", d)
 		}
-		if o.LowCents > 0 && o.LowCents < o.PriceCents {
+		if o.LowCents > 0 && o.LowCents < o.Effective() {
 			fmt.Fprintf(&b, " · mín 30d %s", money(o.LowCents))
 		}
 		b.WriteString("\n")
-		for _, inst := range installmentLines(o) {
+		for _, inst := range installmentLines(w.PriceMode, o) {
 			fmt.Fprintf(&b, "%s\n", inst)
 		}
 		fmt.Fprintf(&b, "%s\n\n", link(truncate(o.Title, 64), o.URL))
@@ -241,10 +247,14 @@ func formatDetail(r watchRow) string {
 	if r.Stats.Products == 0 {
 		b.WriteString("_Ainda sem ofertas registradas\\._\n")
 	} else {
-		fmt.Fprintf(&b, "Melhor agora: *%s*\n", money(r.Stats.BestCents))
+		label := "Melhor agora"
+		if r.Watch.PriceMode == store.ModeInstallment {
+			label = "Melhor parcelado"
+		}
+		fmt.Fprintf(&b, "%s: *%s*\n", label, money(r.Stats.BestCents))
 		// The payment options for the cheapest offer, so the detail view
 		// answers "what would this actually cost me" without a second tap.
-		for _, inst := range installmentLines(r.Best) {
+		for _, inst := range installmentLines(r.Watch.PriceMode, r.Best) {
 			fmt.Fprintf(&b, "%s\n", inst)
 		}
 		if r.Stats.LowCents > 0 && r.Stats.LowCents < r.Stats.BestCents {
@@ -285,22 +295,35 @@ func scanAge(t time.Time) string {
 // "com juros" genuinely costs more -- "em até 12x de R$ 11,08 com juros" on a
 // R$ 118,72 item comes to R$ 132,96 -- and a plan that says nothing either way
 // is shown without a claim.
-func installmentLines(o store.WatchOffer) []string {
+func installmentLines(mode store.PriceMode, o store.WatchOffer) []string {
 	var out []string
+	parcelado := mode == store.ModeInstallment
 
 	if o.InstallmentCount > 1 && o.InstallmentEachCents > 0 {
-		line := fmt.Sprintf("ou %dx %s", o.InstallmentCount, money(o.InstallmentEachCents))
+		// In "parcelado" mode the plan is the headline figure, so this line
+		// breaks it down rather than offering an alternative to it.
+		line := fmt.Sprintf("%dx %s", o.InstallmentCount, money(o.InstallmentEachCents))
+		if !parcelado {
+			line = "ou " + line
+		}
 		if o.InstallmentInterest != "" {
 			line += " " + esc(o.InstallmentInterest)
 		}
 
 		// The total is what the instalments come to, and it is usually more
-		// than the cash price above them.
+		// than the cash price above them. Not worth repeating when it is
+		// already the headline.
 		total := int64(o.InstallmentCount) * o.InstallmentEachCents
-		if total > o.PriceCents {
+		if total > o.PriceCents && !parcelado {
 			line += fmt.Sprintf(" \\(total %s\\)", money(total))
 		}
 		out = append(out, "_"+line+"_")
+	}
+
+	// The cash price is the option that would otherwise go unsaid once the
+	// financed total leads.
+	if parcelado && o.PriceCents > 0 && o.PriceCents != o.Effective() {
+		out = append(out, fmt.Sprintf("_ou %s à vista_", money(o.PriceCents)))
 	}
 
 	if o.OtherMeansCents > o.PriceCents {
@@ -356,6 +379,15 @@ os dois com segurança — para isso use uma faixa de preço:
 
 Depois do primeiro scan, se os preços se dividirem em dois grupos bem
 separados, o bot oferece o filtro em um toque\.
+
+*À vista ou parcelado*
+
+Em */manage*, o botão 💳 alterna a busca entre ordenar pelo preço à vista e
+ordenar pelo total parcelado — a oferta mais barata à vista quase nunca é a
+mais barata parcelada\. O alvo e os alertas passam a usar o mesmo valor\.
+
+As duas formas de pagar aparecem em toda mensagem, com juros quando o
+anúncio cobra juros\.
 
 *Alertas*
 

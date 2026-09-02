@@ -233,7 +233,7 @@ func TestWatchOffersAndStats(t *testing.T) {
 		_ = i
 	}
 
-	offers, err := s.WatchOffers(ctx, w.ID, 30*24*time.Hour, 10)
+	offers, err := s.WatchOffers(ctx, w.ID, ModeCash, 30*24*time.Hour, 10)
 	if err != nil {
 		t.Fatalf("WatchOffers: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestWatchOffersAndStats(t *testing.T) {
 		t.Errorf("MLB1 window low = %d, want 420000", offers[1].LowCents)
 	}
 
-	st, err := s.Stats(ctx, w.ID, 30*24*time.Hour)
+	st, err := s.Stats(ctx, w.ID, ModeCash, 30*24*time.Hour)
 	if err != nil {
 		t.Fatalf("Stats: %v", err)
 	}
@@ -341,5 +341,178 @@ func TestDeleteWatchKeepsHistory(t *testing.T) {
 	}
 	if len(hist) != 1 {
 		t.Errorf("history lost on watch delete: %d points", len(hist))
+	}
+}
+
+// The whole point of the mode: the cheapest cash price and the cheapest
+// financed total are regularly different listings, so the two orders disagree.
+func TestWatchOffersRankByPriceMode(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	now := time.Now()
+
+	w, err := s.CreateWatch(ctx, 7, WatchSpec{Query: "ps5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// "cheap-cash" wins on the cash price but finances at 12x419,90 =
+	// 5.038,80; "cheap-plan" costs more up front and finances for less.
+	for _, spec := range []struct {
+		ext        string
+		price      int64
+		count      int
+		each       int64
+		wantFinanc int64
+	}{
+		{"cheap-cash", 410000, 12, 41990, 503880},
+		{"cheap-plan", 430000, 10, 43500, 435000},
+	} {
+		pid, err := s.UpsertProduct(ctx, Product{Source: "meli", ExternalID: spec.ext, Title: spec.ext, URL: "u"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.LinkWatchProduct(ctx, w.ID, pid, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AddPricePoint(ctx, PricePoint{
+			ProductID:            pid,
+			PriceCents:           spec.price,
+			InstallmentCount:     spec.count,
+			InstallmentEachCents: spec.each,
+			SeenAt:               now.Add(-time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cash, err := s.WatchOffers(ctx, w.ID, ModeCash, 30*24*time.Hour, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cash[0].ExternalID != "cheap-cash" {
+		t.Errorf("cash mode led with %q, want cheap-cash", cash[0].ExternalID)
+	}
+	if cash[0].Effective() != 410000 {
+		t.Errorf("cash mode effective = %d, want the cash price", cash[0].Effective())
+	}
+
+	plan, err := s.WatchOffers(ctx, w.ID, ModeInstallment, 30*24*time.Hour, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan[0].ExternalID != "cheap-plan" {
+		t.Errorf("parcelado mode led with %q, want cheap-plan", plan[0].ExternalID)
+	}
+	if plan[0].Effective() != 435000 {
+		t.Errorf("parcelado effective = %d, want 10x435,00", plan[0].Effective())
+	}
+	// The cash price is still reported, so the message can offer both.
+	if plan[0].PriceCents != 430000 {
+		t.Errorf("cash price = %d, want it preserved alongside", plan[0].PriceCents)
+	}
+
+	st, err := s.Stats(ctx, w.ID, ModeInstallment, 30*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.BestCents != 435000 {
+		t.Errorf("Stats.BestCents = %d, want the cheapest financed total", st.BestCents)
+	}
+}
+
+// The trailing low has to be measured on the same figure as the ranking. A low
+// carried over from the other mode reads as a permanent record low.
+func TestWatchOffersLowFollowsPriceMode(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	now := time.Now()
+
+	w, err := s.CreateWatch(ctx, 7, WatchSpec{Query: "ps5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := s.UpsertProduct(ctx, Product{Source: "meli", ExternalID: "MLB1", Title: "t", URL: "u"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LinkWatchProduct(ctx, w.ID, pid, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cash falls while the financed total rises.
+	for i, p := range []PricePoint{
+		{PriceCents: 500000, InstallmentCount: 10, InstallmentEachCents: 50000}, // financed 5.000,00
+		{PriceCents: 450000, InstallmentCount: 12, InstallmentEachCents: 45000}, // financed 5.400,00
+	} {
+		p.ProductID, p.SeenAt = pid, now.Add(-time.Duration(2-i)*time.Hour)
+		if err := s.AddPricePoint(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cash, err := s.WatchOffers(ctx, w.ID, ModeCash, 30*24*time.Hour, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cash[0].LowCents != 450000 {
+		t.Errorf("cash low = %d, want 450000", cash[0].LowCents)
+	}
+
+	plan, err := s.WatchOffers(ctx, w.ID, ModeInstallment, 30*24*time.Hour, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan[0].LowCents != 500000 {
+		t.Errorf("parcelado low = %d, want the cheaper financed total 500000", plan[0].LowCents)
+	}
+}
+
+// Switching mode changes which figure "the best price" means, so the stored
+// baseline is meaningless afterwards -- keeping it would report a move that
+// never happened.
+func TestSetWatchPriceModeClearsBaseline(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	w, err := s.CreateWatch(ctx, 7, WatchSpec{Query: "ps5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNotifiedBest(ctx, w.ID, 410000); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetWatchPriceMode(ctx, w.ID, ModeInstallment); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Watch(ctx, w.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PriceMode != ModeInstallment {
+		t.Errorf("PriceMode = %q, want parcelado", got.PriceMode)
+	}
+	if got.NotifiedBestCents != 0 {
+		t.Errorf("baseline = %d, want it cleared with the mode", got.NotifiedBestCents)
+	}
+}
+
+func TestParsePriceMode(t *testing.T) {
+	for _, in := range []string{"", "avista", "A Vista", "à vista", "cash"} {
+		got, err := ParsePriceMode(in)
+		if err != nil || got != ModeCash {
+			t.Errorf("ParsePriceMode(%q) = %q, %v; want cash", in, got, err)
+		}
+	}
+	for _, in := range []string{"parcelado", "PARCELADO", " installments "} {
+		got, err := ParsePriceMode(in)
+		if err != nil || got != ModeInstallment {
+			t.Errorf("ParsePriceMode(%q) = %q, %v; want parcelado", in, got, err)
+		}
+	}
+	// A typo must not silently rank on the wrong figure.
+	if _, err := ParsePriceMode("parcelada"); err == nil {
+		t.Error("ParsePriceMode accepted an unknown mode")
 	}
 }

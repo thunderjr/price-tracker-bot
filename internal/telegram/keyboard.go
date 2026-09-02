@@ -6,6 +6,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/thunderjr/price-tracker-bot/internal/source"
+	"github.com/thunderjr/price-tracker-bot/internal/store"
 )
 
 // pageSize is how many watches fit on one page of the manager.
@@ -81,6 +82,13 @@ func detailKeyboard(r watchRow, page int64) *models.InlineKeyboardMarkup {
 		pause = "▶️ Retomar"
 	}
 
+	// The button names the mode it will switch to, so its label is an action
+	// rather than a status the user has to interpret.
+	mode := "💳 Parcelado"
+	if r.Watch.PriceMode == store.ModeInstallment {
+		mode = "💵 À vista"
+	}
+
 	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
 		{
 			button("🔄 Escanear", actScan, r.Watch.ID, page),
@@ -91,7 +99,10 @@ func detailKeyboard(r watchRow, page int64) *models.InlineKeyboardMarkup {
 			button("🗑 Remover", actDeleteAsk, r.Watch.ID, page),
 		},
 		{
+			button(mode, actPriceMode, r.Watch.ID, page),
 			button("🛒 Ver ofertas", actOffers, r.Watch.ID, page),
+		},
+		{
 			button("‹ Voltar", actList, 0, page),
 		},
 	}}

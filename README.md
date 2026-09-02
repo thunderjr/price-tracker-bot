@@ -5,7 +5,8 @@ Telegram bot that tracks prices, promotions and offers for free-text queries
 
 ```
 /track ps5 | max 3500     start tracking, with an optional target price
-/manage                   inline-keyboard manager (scan, target, pause, remove)
+/manage                   inline-keyboard manager (scan, target, pause, remove,
+                          à vista / parcelado)
 /list                     plain text snapshot
 /help
 ```
@@ -207,6 +208,44 @@ R$ 4.184,06 · Amazon
 ou 10x R$ 449,90 (total R$ 4.499,00)
 PlayStation®5 Slim Digital 825GB
 ```
+
+Every way to pay is listed, interest-bearing plans included. Mercado Livre
+prints "sem juros" only when a plan really is free and writes nothing at all
+otherwise, so a plan whose instalments add up to more than the cash price is
+labelled `com juros` from its own arithmetic — silence would read as free.
+
+## À vista or parcelado
+
+The two prices do not rank the same listings. Mercado Livre's own
+"playstation 5 slim" results, on one scan:
+
+| cash | plan | financed |
+|---|---|---|
+| R$ 4.599,00 | 12x R$ 442,00 com juros | R$ 5.304,00 |
+| R$ 4.742,00 | 10x R$ 509,00 sem juros | R$ 5.090,00 |
+| R$ 4.849,00 | 10x R$ 504,00 sem juros | R$ 5.040,00 |
+
+The cheapest console to pay cash for is the **most** expensive of the three to
+finance, and the cheapest to finance is the priciest in cash. Ranking on the
+wrong figure picks the wrong console.
+
+So each watch chooses which figure it shops on — 💳 in `/manage`, or
+`ptb watch -mode parcelado <id>`. The mode decides the ranking, the 30-day low,
+the target, and every alert, and the message says which it used:
+
+```
+💳 por total parcelado
+
+R$ 5.038,80 · Amazon
+12x R$ 419,90 com juros
+ou R$ 4.100,00 à vista
+PlayStation 5 Slim
+```
+
+A listing with no plan falls back to its cash price — paying cash is always
+available, and dropping it would hide a real offer. Switching mode clears the
+watch's notification baseline, so the change itself is never reported as a
+price move.
 
 ## Alert rules
 

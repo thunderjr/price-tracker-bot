@@ -296,7 +296,7 @@ func TestInstallmentLinesOmittedWhenAbsent(t *testing.T) {
 		"one payment": {PriceCents: 418406, InstallmentCount: 1, InstallmentEachCents: 418406},
 		"zero amount": {PriceCents: 418406, InstallmentCount: 10},
 	} {
-		if got := installmentLines(o); len(got) != 0 {
+		if got := installmentLines(store.ModeCash, o); len(got) != 0 {
 			t.Errorf("%s: installmentLines = %v, want none", name, got)
 		}
 	}
@@ -306,7 +306,7 @@ func TestInstallmentLinesOmittedWhenAbsent(t *testing.T) {
 // worth spelling out.
 func TestInstallmentLinesOmitRedundantTotal(t *testing.T) {
 	o := store.WatchOffer{PriceCents: 449900, InstallmentCount: 10, InstallmentEachCents: 44990}
-	lines := installmentLines(o)
+	lines := installmentLines(store.ModeCash, o)
 	if len(lines) != 1 || !strings.Contains(lines[0], "ou 10x R$ 449,90") {
 		t.Fatalf("installmentLines = %v", lines)
 	}
@@ -332,7 +332,7 @@ func TestInstallmentLinesCarryTheInterestWording(t *testing.T) {
 			InstallmentEachCents: 44990,
 			InstallmentInterest:  tc.interest,
 		}
-		lines := installmentLines(o)
+		lines := installmentLines(store.ModeCash, o)
 		if len(lines) != 1 || !strings.Contains(lines[0], tc.want) {
 			t.Errorf("interest %q: installmentLines = %v, want one containing %q", tc.interest, lines, tc.want)
 		}
@@ -352,7 +352,7 @@ func TestInstallmentLinesShowOtherMeans(t *testing.T) {
 		OtherMeansCents:      549900,
 	}
 
-	lines := installmentLines(o)
+	lines := installmentLines(store.ModeCash, o)
 	if len(lines) != 2 {
 		t.Fatalf("installmentLines = %v, want the plan and the other-payment total", lines)
 	}
@@ -362,7 +362,7 @@ func TestInstallmentLinesShowOtherMeans(t *testing.T) {
 
 	// Not worth a line when it is not actually more than the price.
 	o.OtherMeansCents = 519900
-	if got := installmentLines(o); len(got) != 1 {
+	if got := installmentLines(store.ModeCash, o); len(got) != 1 {
 		t.Errorf("installmentLines = %v, want the other-payment line dropped", got)
 	}
 }
@@ -421,5 +421,111 @@ func TestFormatDigestLinksTheHeadlineListing(t *testing.T) {
 	got := formatDigest(store.Watch{Query: "ps5"}, alerts, offers, 4, nil)
 	if !strings.Contains(got, "https://ml/p/MLB1") {
 		t.Errorf("the alerted listing has no link anywhere in the digest:\n%s", got)
+	}
+}
+
+// In "parcelado" mode the financed total is what the watch ranked on, so it is
+// what the message has to lead with -- and the cash price becomes the
+// alternative worth naming.
+func TestFormatDigestLeadsWithTheFinancedTotal(t *testing.T) {
+	o := digestOffer("amazon", "PlayStation 5 Slim", 410000, 0, 0)
+	o.InstallmentCount = 12
+	o.InstallmentEachCents = 41990
+	o.InstallmentInterest = "com juros"
+	o.EffectiveCents = 503880
+
+	got := formatDigest(
+		store.Watch{Query: "ps5", PriceMode: store.ModeInstallment},
+		nil, []store.WatchOffer{o}, 1, nil)
+
+	for _, want := range []string{
+		`*R$ 5\.038,80*`,          // the headline is the financed total
+		"12x R$ 419,90 com juros", // broken down, and honest about the interest
+		`ou R$ 4\.100,00 à vista`, // the other way to pay is still offered
+		"💳 _por total parcelado_",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("digest missing %q:\n%s", want, got)
+		}
+	}
+	// The total is the headline, so repeating it in brackets is noise.
+	if strings.Contains(got, "total R$ 5") {
+		t.Errorf("digest repeated the total it already leads with:\n%s", got)
+	}
+	if bad := unescapedOutsideLinks(t, got); len(bad) > 0 {
+		t.Errorf("unescaped MarkdownV2 characters %v in:\n%s", bad, got)
+	}
+}
+
+// Cash mode is unchanged: the cash price leads and the plan is the alternative.
+func TestFormatDigestCashModeLeadsWithCash(t *testing.T) {
+	o := digestOffer("amazon", "PlayStation 5 Slim", 410000, 0, 0)
+	o.InstallmentCount = 12
+	o.InstallmentEachCents = 41990
+	o.EffectiveCents = 410000
+
+	got := formatDigest(store.Watch{Query: "ps5"}, nil, []store.WatchOffer{o}, 1, nil)
+	if !strings.Contains(got, `*R$ 4\.100,00*`) {
+		t.Errorf("cash mode did not lead with the cash price:\n%s", got)
+	}
+	if !strings.Contains(got, `ou 12x R$ 419,90 \(total R$ 5\.038,80\)`) {
+		t.Errorf("cash mode did not offer the plan with its total:\n%s", got)
+	}
+	if strings.Contains(got, "à vista") {
+		t.Errorf("cash mode restated the price it already leads with:\n%s", got)
+	}
+	if strings.Contains(got, "por total parcelado") {
+		t.Errorf("cash mode claimed the parcelado ordering:\n%s", got)
+	}
+}
+
+// The detail view names the figure it is showing, so a switched watch does not
+// look like a price change.
+func TestFormatDetailNamesThePriceMode(t *testing.T) {
+	row := watchRow{
+		Watch: store.Watch{ID: 1, Query: "ps5", Active: true, PriceMode: store.ModeInstallment},
+		Stats: store.WatchStats{Products: 3, BestCents: 503880},
+		Best: store.WatchOffer{
+			PriceCents:           410000,
+			InstallmentCount:     12,
+			InstallmentEachCents: 41990,
+			EffectiveCents:       503880,
+		},
+	}
+
+	got := formatDetail(row)
+	if !strings.Contains(got, `Melhor parcelado: *R$ 5\.038,80*`) {
+		t.Errorf("detail view did not name the parcelado figure:\n%s", got)
+	}
+	if !strings.Contains(got, `ou R$ 4\.100,00 à vista`) {
+		t.Errorf("detail view omitted the cash option:\n%s", got)
+	}
+
+	row.Watch.PriceMode = store.ModeCash
+	row.Stats.BestCents = 410000
+	row.Best.EffectiveCents = 410000
+	if cash := formatDetail(row); !strings.Contains(cash, "Melhor agora") {
+		t.Errorf("cash mode detail view:\n%s", cash)
+	}
+}
+
+// The button says what tapping it will do, not what the watch currently is.
+func TestDetailKeyboardModeButtonNamesTheSwitch(t *testing.T) {
+	for mode, want := range map[store.PriceMode]string{
+		store.ModeCash:        "💳 Parcelado",
+		store.ModeInstallment: "💵 À vista",
+	} {
+		kb := detailKeyboard(watchRow{Watch: store.Watch{ID: 1, PriceMode: mode, Active: true}}, 0)
+		var found bool
+		for _, row := range kb.InlineKeyboard {
+			for _, b := range row {
+				if b.Text == want {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Errorf("mode %q: no button labelled %q", mode, want)
+		}
 	}
 }

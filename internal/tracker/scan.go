@@ -244,7 +244,7 @@ func (t *Tracker) scan(ctx context.Context, w store.Watch) (*Result, error) {
 		}
 	}
 
-	tracked, err := t.store.WatchOffers(ctx, w.ID, t.rules.MedianWindow, maxTrackedPerWatch)
+	tracked, err := t.store.WatchOffers(ctx, w.ID, w.PriceMode, t.rules.MedianWindow, maxTrackedPerWatch)
 	if err != nil {
 		return res, err
 	}
@@ -253,7 +253,7 @@ func (t *Tracker) scan(ctx context.Context, w store.Watch) (*Result, error) {
 	// WatchOffers returns the cheapest first, so this is the watch's best
 	// price right now.
 	if len(tracked) > 0 {
-		res.BestCents = tracked[0].PriceCents
+		res.BestCents = tracked[0].EffectiveCents
 		move, err := t.reportBestMove(ctx, w, tracked[0], now)
 		if err != nil {
 			return res, err
@@ -278,27 +278,32 @@ func (t *Tracker) scan(ctx context.Context, w store.Watch) (*Result, error) {
 func (t *Tracker) reportBestMove(ctx context.Context, w store.Watch, best store.WatchOffer, now time.Time) (*Alert, error) {
 	previous := w.NotifiedBestCents
 
-	kind, ok := t.rules.BestMove(previous, best.PriceCents)
+	// The watch's own mode decides which figure moved: a cash price holding
+	// steady while the financing terms worsen is a real rise to someone
+	// shopping "parcelado".
+	bestCents := best.EffectiveCents
+
+	kind, ok := t.rules.BestMove(previous, bestCents)
 	if !ok {
 		// Still worth remembering the first best price, so the next move has
 		// something to be measured against.
-		if previous == 0 && best.PriceCents > 0 {
-			return nil, t.store.SetNotifiedBest(ctx, w.ID, best.PriceCents)
+		if previous == 0 && bestCents > 0 {
+			return nil, t.store.SetNotifiedBest(ctx, w.ID, bestCents)
 		}
 		return nil, nil
 	}
 
-	if err := t.store.SetNotifiedBest(ctx, w.ID, best.PriceCents); err != nil {
+	if err := t.store.SetNotifiedBest(ctx, w.ID, bestCents); err != nil {
 		return nil, err
 	}
-	if err := t.store.RecordAlert(ctx, w.ID, best.ID, string(kind), best.PriceCents, now); err != nil {
+	if err := t.store.RecordAlert(ctx, w.ID, best.ID, string(kind), bestCents, now); err != nil {
 		return nil, err
 	}
 
 	return &Alert{
 		Candidate: Candidate{
 			Kind:       kind,
-			PriceCents: best.PriceCents,
+			PriceCents: bestCents,
 			RefCents:   previous,
 			Confident:  true,
 		},
@@ -322,7 +327,7 @@ func filterOptions(w store.Watch) relevance.Options {
 // current filters reject on stored attributes, plus any key in rejected, which
 // carries what this scan's own filtering threw away.
 func (t *Tracker) prune(ctx context.Context, w store.Watch, rejected map[string]bool) (int, error) {
-	tracked, err := t.store.WatchOffers(ctx, w.ID, t.rules.MedianWindow, maxTrackedPerWatch)
+	tracked, err := t.store.WatchOffers(ctx, w.ID, w.PriceMode, t.rules.MedianWindow, maxTrackedPerWatch)
 	if err != nil {
 		return 0, err
 	}
@@ -379,7 +384,7 @@ func (t *Tracker) dropDelisted(ctx context.Context, w store.Watch, seen map[stri
 		}
 	}
 
-	tracked, err := t.store.WatchOffers(ctx, w.ID, t.rules.MedianWindow, maxTrackedPerWatch)
+	tracked, err := t.store.WatchOffers(ctx, w.ID, w.PriceMode, t.rules.MedianWindow, maxTrackedPerWatch)
 	if err != nil {
 		return 0, err
 	}
@@ -458,7 +463,7 @@ func (t *Tracker) record(ctx context.Context, w store.Watch, o source.Offer, now
 	}
 
 	var out []Alert
-	for _, c := range t.rules.Evaluate(o, history, w.TargetCents, now) {
+	for _, c := range t.rules.Evaluate(inMode(o, w.PriceMode), historyInMode(history, w.PriceMode), w.TargetCents, now) {
 		lastAt, lastPrice, err := t.store.LastAlert(ctx, w.ID, id, string(c.Kind))
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return nil, err
@@ -472,6 +477,32 @@ func (t *Tracker) record(ctx context.Context, w store.Watch, o source.Offer, now
 		out = append(out, Alert{Candidate: c, Watch: w, Product: product})
 	}
 	return out, nil
+}
+
+// inMode and historyInMode restate an observation in the watch's chosen terms,
+// so that every rule below -- the target, the record low, the drop against the
+// median -- compares the figure the user is actually shopping on.
+//
+// Rewriting the inputs rather than teaching each rule about modes keeps one
+// definition of "the price" per watch: a rule that read the cash price while
+// its neighbour read the financed one would fire on a mixture of the two.
+func inMode(o source.Offer, mode store.PriceMode) source.Offer {
+	o.PriceCents = store.EffectiveCents(mode, o.PriceCents, o.Installments.Count, o.Installments.Each)
+	return o
+}
+
+func historyInMode(history []store.PricePoint, mode store.PriceMode) []store.PricePoint {
+	if mode == store.ModeCash {
+		return history
+	}
+	// A copy: these points are the caller's, and the digest still reports the
+	// cash price alongside.
+	out := make([]store.PricePoint, len(history))
+	for i, p := range history {
+		p.PriceCents = store.EffectiveCents(mode, p.PriceCents, p.InstallmentCount, p.InstallmentEachCents)
+		out[i] = p
+	}
+	return out
 }
 
 // shouldRecord keeps the history readable: a point per change in what the

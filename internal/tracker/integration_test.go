@@ -85,7 +85,7 @@ func TestLiveScanEndToEnd(t *testing.T) {
 		t.Errorf("first ever scan produced alerts: %v", res.Alerts)
 	}
 
-	offers, err := st.WatchOffers(ctx, w.ID, 30*24*time.Hour, 500)
+	offers, err := st.WatchOffers(ctx, w.ID, store.ModeCash, 30*24*time.Hour, 500)
 	if err != nil {
 		t.Fatalf("WatchOffers: %v", err)
 	}

@@ -33,11 +33,52 @@ var migrations = []string{
 	`ALTER TABLE price_points ADD COLUMN installment_interest TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE price_points ADD COLUMN other_means_cents INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE watch_products ADD COLUMN miss_count INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE watches ADD COLUMN price_mode TEXT NOT NULL DEFAULT ''`,
 	// The alert cooldown became per (watch, product), so its index gained
 	// watch_id. An existing database still carries the two-column version
 	// under the same name, which CREATE INDEX IF NOT EXISTS will not replace.
 	`DROP INDEX IF EXISTS idx_alerts_recent`,
 	`CREATE INDEX IF NOT EXISTS idx_alerts_recent ON alerts (watch_id, product_id, kind, fired_at DESC)`,
+}
+
+// PriceMode is which figure a watch shops on. Both marketplaces quote two
+// prices for the same item -- cash (often discounted for Pix) and the total of
+// an instalment plan -- and they do not rank the same: the cheapest cash price
+// is regularly not the cheapest financed one.
+type PriceMode string
+
+const (
+	// ModeCash ranks and alerts on the cash price. The zero value, so a watch
+	// that never chose behaves as it always did.
+	ModeCash PriceMode = ""
+	// ModeInstallment ranks and alerts on what the instalment plan adds up to.
+	ModeInstallment PriceMode = "parcelado"
+)
+
+// ParsePriceMode reads a mode from user input, accepting the words either
+// marketplace uses. An unrecognized value is rejected rather than silently
+// treated as cash: quietly ranking on the wrong figure is the whole bug this
+// setting exists to avoid.
+func ParsePriceMode(s string) (PriceMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "avista", "a vista", "à vista", "cash":
+		return ModeCash, nil
+	case "parcelado", "installment", "installments":
+		return ModeInstallment, nil
+	}
+	return ModeCash, fmt.Errorf("store: unknown price mode %q (want \"avista\" or \"parcelado\")", s)
+}
+
+// EffectiveCents is what a shopper in this mode actually pays.
+//
+// A listing with no instalment plan falls back to its cash price: paying cash
+// is always available, and dropping such a listing would hide real offers from
+// a watch in "parcelado" mode.
+func EffectiveCents(mode PriceMode, priceCents int64, count int, eachCents int64) int64 {
+	if mode != ModeInstallment || count <= 1 || eachCents <= 0 {
+		return priceCents
+	}
+	return int64(count) * eachCents
 }
 
 // ErrNotFound is returned when a lookup by id matches nothing.
@@ -65,9 +106,12 @@ type Watch struct {
 	// AllowInternational keeps cross-border listings, which are dropped by
 	// default because their price excludes Brazilian import tax.
 	AllowInternational bool
-	Active             bool
-	CreatedAt          time.Time
-	LastScanAt         time.Time // zero when never scanned
+	// PriceMode picks which of a listing's two prices this watch ranks and
+	// alerts on.
+	PriceMode  PriceMode
+	Active     bool
+	CreatedAt  time.Time
+	LastScanAt time.Time // zero when never scanned
 }
 
 // Product is a listing identified stably across scans.
@@ -249,6 +293,16 @@ func (s *Store) SetWatchInternational(ctx context.Context, id int64, allow bool)
 		`UPDATE watches SET allow_international = ? WHERE id = ?`, boolInt(allow), id)
 }
 
+// SetWatchPriceMode chooses which of a listing's prices a watch shops on.
+//
+// The baseline is cleared with it: the stored "best price we told you about"
+// is a figure in the old mode, and comparing the new mode's best against it
+// would report a move that never happened.
+func (s *Store) SetWatchPriceMode(ctx context.Context, id int64, mode PriceMode) error {
+	return s.exec(ctx, "set watch price mode",
+		`UPDATE watches SET price_mode = ?, notified_best_cents = 0 WHERE id = ?`, string(mode), id)
+}
+
 // SetWatchExclude replaces a watch's exclusion terms.
 func (s *Store) SetWatchExclude(ctx context.Context, id int64, terms []string) error {
 	return s.exec(ctx, "set watch exclude",
@@ -274,7 +328,7 @@ func (s *Store) DeleteWatch(ctx context.Context, id int64) error {
 const selectWatch = `
 	SELECT id, chat_id, query, COALESCE(target_cents, 0), COALESCE(min_cents, 0), COALESCE(max_cents, 0),
 	       COALESCE(exclude_terms, ''), COALESCE(require_terms, ''), COALESCE(allow_international, 0),
-	       COALESCE(notified_best_cents, 0), active, created_at,
+	       COALESCE(notified_best_cents, 0), COALESCE(price_mode, ''), active, created_at,
 	       COALESCE(last_scan_at, '')
 	FROM watches`
 
@@ -300,11 +354,13 @@ func scanWatchInto(row rowScanner) (Watch, error) {
 		active   int
 		created  string
 		lastScan string
+		mode     string
 	)
 	if err := row.Scan(&w.ID, &w.ChatID, &w.Query, &w.TargetCents, &w.MinCents, &w.MaxCents,
-		&exclude, &require, &intl, &w.NotifiedBestCents, &active, &created, &lastScan); err != nil {
+		&exclude, &require, &intl, &w.NotifiedBestCents, &mode, &active, &created, &lastScan); err != nil {
 		return Watch{}, err
 	}
+	w.PriceMode = PriceMode(mode)
 	w.Exclude = splitTerms(exclude)
 	w.Require = splitTerms(require)
 	w.AllowInternational = intl != 0
@@ -495,27 +551,59 @@ type WatchOffer struct {
 	InstallmentInterest  string
 	OtherMeansCents      int64
 	SeenAt               time.Time
-	LowCents             int64 // lowest price recorded in the trailing window
+	LowCents             int64 // lowest effective price recorded in the trailing window
+	// EffectiveCents is this offer restated in the watch's mode: the cash
+	// price, or what the instalment plan adds up to. It is what the offer was
+	// ranked on, so callers compare and display this rather than re-deriving
+	// it and risking a different answer.
+	EffectiveCents int64
 }
 
-// WatchOffers returns a watch's products ranked cheapest first, each with its
-// latest price and its low over the trailing window.
-func (s *Store) WatchOffers(ctx context.Context, watchID int64, window time.Duration, limit int) ([]WatchOffer, error) {
-	rows, err := s.db.QueryContext(ctx, `
+// Effective is the figure this offer was ranked on. It falls back to the cash
+// price for an offer built outside a ranked query, where no mode applied.
+func (o WatchOffer) Effective() int64 {
+	if o.EffectiveCents > 0 {
+		return o.EffectiveCents
+	}
+	return o.PriceCents
+}
+
+// priceExpr is the SQL for the figure a mode shops on, over the price_points
+// row aliased as alias.
+//
+// Both branches are fixed SQL chosen by mode; nothing user-supplied reaches
+// the statement. Ranking and the trailing low share it so the two agree --
+// a "cheapest" offer whose low was measured on the other figure reads as a
+// permanent record low.
+func priceExpr(mode PriceMode, alias string) string {
+	if mode != ModeInstallment {
+		return alias + ".price_cents"
+	}
+	return "CASE WHEN " + alias + ".installment_count > 1 AND " + alias + ".installment_each_cents > 0" +
+		" THEN " + alias + ".installment_count * " + alias + ".installment_each_cents" +
+		" ELSE " + alias + ".price_cents END"
+}
+
+// WatchOffers returns a watch's products ranked cheapest first in the given
+// mode, each with its latest price and its low over the trailing window.
+func (s *Store) WatchOffers(ctx context.Context, watchID int64, mode PriceMode, window time.Duration, limit int) ([]WatchOffer, error) {
+	effective := priceExpr(mode, "lp")
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT p.id, p.source, p.external_id, p.title, p.url, p.image_url, p.seller, p.international,
 		       lp.price_cents, lp.list_price_cents, lp.site_flags,
 		       COALESCE(lp.installment_count, 0), COALESCE(lp.installment_each_cents, 0),
 		       COALESCE(lp.installment_interest, ''), COALESCE(lp.other_means_cents, 0), lp.seen_at,
-		       COALESCE((SELECT MIN(price_cents) FROM price_points
-		                 WHERE product_id = p.id AND seen_at >= ?), lp.price_cents)
+		       COALESCE((SELECT MIN(%[1]s) FROM price_points lp
+		                 WHERE lp.product_id = p.id AND lp.seen_at >= ?), %[1]s),
+		       %[1]s
 		FROM watch_products wp
 		JOIN products p ON p.id = wp.product_id
 		JOIN price_points lp ON lp.id = (
 		    SELECT id FROM price_points WHERE product_id = p.id
 		    ORDER BY seen_at DESC, id DESC LIMIT 1)
 		WHERE wp.watch_id = ?
-		ORDER BY lp.price_cents
-		LIMIT ?`,
+		ORDER BY %[1]s
+		LIMIT ?`, effective),
 		formatTime(time.Now().Add(-window)), watchID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: watch offers: %w", err)
@@ -533,7 +621,7 @@ func (s *Store) WatchOffers(ctx context.Context, watchID int64, window time.Dura
 		if err := rows.Scan(&o.ID, &o.Source, &o.ExternalID, &o.Title, &o.URL, &o.ImageURL, &o.Seller, &intl,
 			&o.PriceCents, &o.ListPriceCents, &flags,
 			&o.InstallmentCount, &o.InstallmentEachCents, &o.InstallmentInterest,
-			&o.OtherMeansCents, &seen, &o.LowCents); err != nil {
+			&o.OtherMeansCents, &seen, &o.LowCents, &o.EffectiveCents); err != nil {
 			return nil, fmt.Errorf("store: scan watch offer: %w", err)
 		}
 		o.International = intl != 0
@@ -554,9 +642,10 @@ type WatchStats struct {
 	LowCents  int64
 }
 
-// Stats returns a watch's headline numbers over the trailing window.
-func (s *Store) Stats(ctx context.Context, watchID int64, window time.Duration) (WatchStats, error) {
-	offers, err := s.WatchOffers(ctx, watchID, window, 1000)
+// Stats returns a watch's headline numbers over the trailing window, in the
+// given mode.
+func (s *Store) Stats(ctx context.Context, watchID int64, mode PriceMode, window time.Duration) (WatchStats, error) {
+	offers, err := s.WatchOffers(ctx, watchID, mode, window, 1000)
 	if err != nil {
 		return WatchStats{}, err
 	}
@@ -564,7 +653,7 @@ func (s *Store) Stats(ctx context.Context, watchID int64, window time.Duration) 
 	st := WatchStats{Products: len(offers)}
 	for i, o := range offers {
 		if i == 0 {
-			st.BestCents, st.BestID, st.LowCents = o.PriceCents, o.ID, o.LowCents
+			st.BestCents, st.BestID, st.LowCents = o.EffectiveCents, o.ID, o.LowCents
 			continue
 		}
 		if o.LowCents > 0 && o.LowCents < st.LowCents {
