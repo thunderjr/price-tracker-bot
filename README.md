@@ -177,14 +177,50 @@ into two groups separated by a 3× gap with enough listings above it, it asks:
 On the Amazon "ps5" fixture that suggestion cuts 22 junk listings and loses
 zero real ones. On the LEGO fixture it stays silent, which is the whole point.
 
+## Advertised discounts are checked, not believed
+
+Both marketplaces strike out a figure beside the cash price, and on most
+listings it is simply the same item paid in instalments. Amazon shows
+
+> **R$ 4.184,06** ~~R$ 4.499,00~~ à vista no Pix ou NuPay ou em até 10x de R$ 449,90
+
+and ten times 449,90 is exactly 4.499,00. Mercado Livre does the same with
+"ou R$ 4.599,90 em 10x R$ 459,99". Read as a former price, that gap becomes a
+5–8% discount that never expires, on nearly every listing, burying the real
+ones.
+
+So the installment plan is parsed and the reference price checked against it: a
+figure within 1.5% of `count × each` is the financing total, not a markdown.
+On the Amazon "ps5" fixture that removes 17 of 26 struck figures and keeps 9 —
+Spider-Man 2 at −55%, ASTRO BOT at −42%, Resident Evil at −20%.
+
+The financing offer is kept and shown, since it is what the instalments cost:
+
+```
+R$ 4.184,06 · Amazon
+ou 10x R$ 449,90 (total R$ 4.499,00)
+PlayStation®5 Slim Digital 825GB
+```
+
 ## Alert rules
 
 | rule | fires when | confidence |
 |---|---|---|
+| `best_drop` / `best_rise` | the watch's cheapest offer moves more than `BEST_MOVE_THRESHOLD` since you were last told | high |
 | `drop_vs_median` | price is `DROP_THRESHOLD` below its own 30-day median (≥5 points) | high |
 | `new_low` | price matches or beats the lowest ever recorded | high |
 | `target` | price crosses the target you set | high |
 | `site_flag` | the listing starts advertising a promotion | **low** — flagged as such in the message |
+
+`best_drop` and `best_rise` are the running commentary: they say nothing about
+whether the price is *good*, only that it moved, so you hear about movement
+without having to ask. They are measured against the figure you were last
+notified of rather than the previous scan, so a slow slide is announced once it
+adds up, and a price flapping between two values does not notify twice.
+
+The four rules below them require 12 hours of history and at least 3
+observations. Without that, a watch's second scan declares half the catalogue a
+record low — which is exactly what happened once, as 56 notifications.
 
 The median, not the mean, is the baseline: one spike or one flash sale in the
 history must not manufacture a fake drop. `site_flag` is reported as low
@@ -201,6 +237,7 @@ The same alert will not repeat for 24h unless the price falls another 5%.
 | `ALLOWED_CHAT_IDS` | — | required; comma-separated. Without it the bot answers nobody |
 | `SCAN_INTERVAL` | `3h` | how often every active watch is rescanned |
 | `DROP_THRESHOLD` | `0.10` | how far below the median counts as a drop |
+| `BEST_MOVE_THRESHOLD` | `0.01` | how far a watch's best price must move to notify |
 | `DATA_DIR` | `/data` | holds `ptb.db` and `chrome-profile/` |
 | `CHROME_PATH` | `/usr/bin/chromium` | |
 | `LOG_LEVEL` | `info` | |
