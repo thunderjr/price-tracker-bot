@@ -226,6 +226,38 @@ func (p InstallmentPlan) ResolveInterest(priceCents int64) InstallmentPlan {
 	return p
 }
 
+// ResolveInterestAgainst fills in the interest wording from a reference price
+// the listing publishes as a number, for a source that never states the
+// wording in words at all.
+//
+// Kabum is that source: "juros" appears nowhere on a search page, but every
+// card carries both figures -- a card price and a lower cash price for Pix --
+// and its plans total the card price to the cent. So the plan itself is free
+// and the gap down to the cash price is a Pix discount, not financing cost.
+//
+// Comparing against the cash price, which is what ResolveInterest does for the
+// sources that do print the wording, would label every Kabum plan "com juros"
+// and contradict Amazon on the very same offer: R$ 4.184 cash, 10x R$ 449,90,
+// and Amazon says "sem juros" outright.
+//
+// A stated wording is never overridden.
+func (p InstallmentPlan) ResolveInterestAgainst(referenceCents int64) InstallmentPlan {
+	if p.Count <= 1 || p.Interest != InterestUnknown || referenceCents <= 0 {
+		return p
+	}
+
+	total := p.TotalCents()
+	switch {
+	case total <= 0:
+		return p
+	case within(total, referenceCents):
+		p.Interest = InterestFree
+	case total > referenceCents:
+		p.Interest = InterestCharged
+	}
+	return p
+}
+
 // within reports whether cents is the same figure as total, allowing for the
 // rounding both sites apply when they display a total.
 func within(cents, total int64) bool {

@@ -233,3 +233,66 @@ func TestResolveInterestFromArithmetic(t *testing.T) {
 		})
 	}
 }
+
+// ResolveInterestAgainst reads the wording off a published reference price, for
+// a source that never writes "juros" at all. Kabum's plans total its card
+// price exactly, so they are free and the gap to the cash price is a Pix
+// discount -- the opposite conclusion to the one the cash price would give.
+func TestResolveInterestAgainstAReferencePrice(t *testing.T) {
+	cases := []struct {
+		name string
+		plan InstallmentPlan
+		ref  int64
+		want Interest
+	}{
+		{
+			name: "plan totalling the card price is free",
+			plan: InstallmentPlan{Count: 10, Each: 44990},
+			ref:  449900,
+			want: InterestFree,
+		},
+		{
+			name: "rounding in the published total is still free",
+			plan: InstallmentPlan{Count: 10, Each: 42094},
+			ref:  420947,
+			want: InterestFree,
+		},
+		{
+			name: "plan above the card price is charging interest",
+			plan: InstallmentPlan{Count: 12, Each: 41990},
+			ref:  449900,
+			want: InterestCharged,
+		},
+		{
+			name: "a stated wording is never overridden",
+			plan: InstallmentPlan{Count: 12, Each: 41990, Interest: InterestFree},
+			ref:  449900,
+			want: InterestFree,
+		},
+		{
+			name: "no reference price leaves it unknown",
+			plan: InstallmentPlan{Count: 10, Each: 44990},
+			ref:  0,
+			want: InterestUnknown,
+		},
+		{
+			name: "a single payment is not a plan",
+			plan: InstallmentPlan{Count: 1, Each: 449900},
+			ref:  449900,
+			want: InterestUnknown,
+		},
+		{
+			name: "a plan cheaper than the card price stays unknown",
+			plan: InstallmentPlan{Count: 10, Each: 30000},
+			ref:  449900,
+			want: InterestUnknown,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.plan.ResolveInterestAgainst(c.ref).Interest; got != c.want {
+				t.Errorf("interest = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
