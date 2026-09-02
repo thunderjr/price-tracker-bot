@@ -1,5 +1,5 @@
 .env
 data/
-ptb
+/ptb
 tracker.test
 browser.test
