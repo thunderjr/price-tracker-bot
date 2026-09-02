@@ -310,13 +310,14 @@ func installmentLines(mode store.PriceMode, o store.WatchOffer) []string {
 			line += " " + esc(o.InstallmentInterest)
 		}
 
-		// The total is what the instalments come to, and it is usually more
-		// than the cash price above them. Not worth repeating when it is
-		// already the headline.
+		// The total always rides on the same line as the instalments it comes
+		// from. It is the figure the offers are ranked by, so showing it
+		// beside the plan is what lets the reader check the order -- and the
+		// per-instalment amount on its own says nothing about what the plan
+		// costs. Printed even when it matches the cash price, so its absence
+		// never has to be interpreted.
 		total := int64(o.InstallmentCount) * o.InstallmentEachCents
-		if total > o.PriceCents && !parcelado {
-			line += fmt.Sprintf(" \\(total %s\\)", money(total))
-		}
+		line += fmt.Sprintf(" \\(total %s\\)", money(total))
 		out = append(out, "_"+line+"_")
 	}
 
@@ -387,7 +388,8 @@ ordenar pelo total parcelado — a oferta mais barata à vista quase nunca é a
 mais barata parcelada\. O alvo e os alertas passam a usar o mesmo valor\.
 
 As duas formas de pagar aparecem em toda mensagem, com juros quando o
-anúncio cobra juros\.
+anúncio cobra juros\. O total do parcelamento vem na mesma linha das
+parcelas — é por ele que as ofertas são ordenadas\.
 
 *Alertas*
 

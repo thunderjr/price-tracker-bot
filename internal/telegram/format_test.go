@@ -302,16 +302,17 @@ func TestInstallmentLinesOmittedWhenAbsent(t *testing.T) {
 	}
 }
 
-// When the instalments add up to no more than the cash price there is no total
-// worth spelling out.
-func TestInstallmentLinesOmitRedundantTotal(t *testing.T) {
+// The total rides on the instalment line even when it matches the cash price,
+// so a reader never has to work out whether a missing total means "the same"
+// or "not published".
+func TestInstallmentLinesAlwaysCarryTheTotal(t *testing.T) {
 	o := store.WatchOffer{PriceCents: 449900, InstallmentCount: 10, InstallmentEachCents: 44990}
 	lines := installmentLines(store.ModeCash, o)
-	if len(lines) != 1 || !strings.Contains(lines[0], "ou 10x R$ 449,90") {
+	if len(lines) != 1 {
 		t.Fatalf("installmentLines = %v", lines)
 	}
-	if strings.Contains(lines[0], "total") {
-		t.Errorf("installmentLines = %v, want no total when it equals the price", lines)
+	if want := `ou 10x R$ 449,90 \(total R$ 4\.499,00\)`; !strings.Contains(lines[0], want) {
+		t.Errorf("installmentLines = %v, want a line containing %q", lines, want)
 	}
 }
 
@@ -439,18 +440,16 @@ func TestFormatDigestLeadsWithTheFinancedTotal(t *testing.T) {
 		nil, []store.WatchOffer{o}, 1, nil)
 
 	for _, want := range []string{
-		`*R$ 5\.038,80*`,          // the headline is the financed total
-		"12x R$ 419,90 com juros", // broken down, and honest about the interest
+		`*R$ 5\.038,80*`, // the headline is the financed total
+		// The plan, the interest it charges, and what it comes to -- all on
+		// one line, so the ranking figure sits beside the instalments.
+		`12x R$ 419,90 com juros \(total R$ 5\.038,80\)`,
 		`ou R$ 4\.100,00 à vista`, // the other way to pay is still offered
 		"💳 _por total parcelado_",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("digest missing %q:\n%s", want, got)
 		}
-	}
-	// The total is the headline, so repeating it in brackets is noise.
-	if strings.Contains(got, "total R$ 5") {
-		t.Errorf("digest repeated the total it already leads with:\n%s", got)
 	}
 	if bad := unescapedOutsideLinks(t, got); len(bad) > 0 {
 		t.Errorf("unescaped MarkdownV2 characters %v in:\n%s", bad, got)

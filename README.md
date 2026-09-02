@@ -237,10 +237,14 @@ the target, and every alert, and the message says which it used:
 💳 por total parcelado
 
 R$ 5.038,80 · Amazon
-12x R$ 419,90 com juros
+12x R$ 419,90 com juros (total R$ 5.038,80)
 ou R$ 4.100,00 à vista
 PlayStation 5 Slim
 ```
+
+Offers are ordered by that total, ascending, and the total is printed beside
+the instalments that produce it — the per-instalment amount alone says nothing
+about what a plan costs, and the longest plan is regularly the dearest.
 
 A listing with no plan falls back to its cash price — paying cash is always
 available, and dropping it would hide a real offer. Switching mode clears the

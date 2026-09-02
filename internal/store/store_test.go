@@ -516,3 +516,66 @@ func TestParsePriceMode(t *testing.T) {
 		t.Error("ParsePriceMode accepted an unknown mode")
 	}
 }
+
+// The ranking key is what the plan comes to, never the per-instalment amount.
+// A long plan has the smallest monthly figure and is regularly the dearest
+// overall, so ranking on the instalment would put the most expensive offer
+// first while looking plausible.
+func TestWatchOffersRankByTotalNotInstalment(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	now := time.Now()
+
+	w, err := s.CreateWatch(ctx, 7, WatchSpec{Query: "ps5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, spec := range []struct {
+		ext   string
+		price int64
+		count int
+		each  int64
+	}{
+		// Smallest instalment, largest total.
+		{"long-plan", 900000, 12, 100000}, // 12x1.000,00 = 12.000,00
+		{"short-plan", 900000, 6, 150000}, // 6x1.500,00  =  9.000,00
+	} {
+		pid, err := s.UpsertProduct(ctx, Product{Source: "meli", ExternalID: spec.ext, Title: spec.ext, URL: "u"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.LinkWatchProduct(ctx, w.ID, pid, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AddPricePoint(ctx, PricePoint{
+			ProductID:            pid,
+			PriceCents:           spec.price,
+			InstallmentCount:     spec.count,
+			InstallmentEachCents: spec.each,
+			SeenAt:               now.Add(-time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	offers, err := s.WatchOffers(ctx, w.ID, ModeInstallment, 30*24*time.Hour, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if offers[0].ExternalID != "short-plan" {
+		t.Errorf("led with %q, want short-plan -- the lowest total, not the lowest instalment",
+			offers[0].ExternalID)
+	}
+	if offers[0].Effective() != 900000 {
+		t.Errorf("effective = %d, want the 9.000,00 total", offers[0].Effective())
+	}
+
+	// And the order is ascending in the total, all the way down.
+	for i := 1; i < len(offers); i++ {
+		if offers[i-1].Effective() > offers[i].Effective() {
+			t.Errorf("offers %d and %d out of order: %d then %d",
+				i-1, i, offers[i-1].Effective(), offers[i].Effective())
+		}
+	}
+}
