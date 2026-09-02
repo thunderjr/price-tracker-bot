@@ -1,0 +1,66 @@
+# Hand-labelled from a live "playstation 5" search on kabum.com.br.
+# KaBuM! is by far the noisiest of the three for this query: 14 of 60 results
+# are consoles. The rest are controllers, games, covers, stands and three
+# PlayStation Portals, which is a separate streaming handheld rather than a
+# console. This is also the source that pads a non-matching query with
+# unrelated recommendations, so the filter carries more weight here.
+keep 989702    Console PS5 Digital 825GB + 2 jogos
+keep 934759    Console PS5 com leitor de discos 1TB
+keep 1004851   Console PS5 Slim Digital 825GB
+keep 1065184   Console PS5 Digital Wolverine edicao limitada
+keep 636960    Console PS5 Pro 2TB
+keep 1050570   Console PS5 Digital Slim 825GB
+keep 953110    Console PS5 Slim 1TB midia fisica
+keep 1049973   Console PS5 1TB leitor de discos
+keep 643102    Console PS5 Pro 2TB
+keep 575717    Console PS5 Slim Spider-Man 2 1TB
+keep 1064269   Console PS5 Slim Disk 1TB Homem-Aranha 2
+keep 1064154   Console PS5 825GB + EA Sports FC 24
+keep 498245    Console PS5 825GB midia fisica
+keep 1064155   Console PS5 Standard 825GB com leitor
+drop 1051619   game: GTA VI
+drop 238164    accessory: base de carregamento
+drop 1032835   accessory: controle DualSense
+drop 1065182   accessory: controle DualSense Wolverine
+drop 1065183   accessory: controle DualSense Adamantium
+drop 1065233   accessory: tampa de console
+drop 916677    game: EA Sports FC 26
+drop 1065229   accessory: tampa de console
+drop 1065925   accessory: tampas de console
+drop 1003386   accessory: controle DualSense Ghost of Yotei
+drop 1066262   game: GTA VI
+drop 1032839   accessory: controle DualSense
+drop 1032834   accessory: controle DualSense
+drop 1008210   accessory: controle DualSense
+drop 69305     accessory: volante Logitech G29
+drop 926599    game: Battlefield 6
+drop 536958    accessory: leitor de disco avulso
+drop 536999    accessory: headset Pulse Elite
+drop 1027438   accessory: controle DualSense 007
+drop 1027292   game: Gears of War Reloaded
+drop 1016899   game: PRAGMATA
+drop 401293    accessory: controle DualSense Edge
+drop 1032838   accessory: controle DualSense
+drop 528782    accessory: adaptador PS Link
+drop 475807    accessory: controle Access
+drop 235759    gift card, not a console
+drop 996782    game: Resident Evil Requiem
+drop 780262    game: Ghost of Yotei
+drop 945665    accessory: controle DualSense
+drop 706951    accessory: base suporte com resfriador
+drop 945695    accessory: controle DualSense
+drop 394555    accessory: controle DualSense
+drop 548547    PlayStation Portal: a different device
+drop 697722    accessory: controle DualSense Edge
+drop 503115    game: Marvel's Spider-Man 2
+drop 528351    accessory: controle DualSense
+drop 697721    PlayStation Portal: a different device
+drop 1004711   accessory: controle DualSense Hyperpop
+drop 620022    PlayStation Portal: a different device
+drop 1008212   accessory: controle DualSense
+drop 1023134   controller + game bundle, no console
+drop 934563    game: Peppa Pig World Adventures
+drop 634436    accessory: suporte vertical
+drop 696898    game: Devil May Cry Special Edition
+drop 628036    accessory: tampas de console
+drop 752119    accessory: base cooler com suporte

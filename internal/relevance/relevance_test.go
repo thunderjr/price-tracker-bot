@@ -141,6 +141,7 @@ func TestNoUnbudgetedFalseDrops(t *testing.T) {
 	for _, tc := range []struct{ base, query string }{
 		{"amazon-ps5", "ps5"},
 		{"meli-ps5", "ps5"},
+		{"kabum-ps5", "ps5"},
 		{"meli-lego", "lego millennium falcon"},
 		{"meli-olivia", "LEGO Olivia Rodrigo"},
 	} {
@@ -183,6 +184,15 @@ func TestRecallFloors(t *testing.T) {
 		// separates from a console safely. Accessories are the catchable part.
 		{"amazon-ps5", "ps5", 15},
 		{"meli-ps5", "ps5", 0},
+		// KaBuM! is the noisiest source for this query -- 14 of its 60 results
+		// are consoles -- and the least catchable by title, because it names
+		// the bundled controller in the console's own title ("Console Sony
+		// PlayStation 5, SSD 825GB, Controle Sem Fio DualSense"). So
+		// "controle" cannot be an accessory noun without dropping real
+		// consoles, and its 33 controllers and games survive the title rules.
+		// The price bound is what separates them: see
+		// TestPriceFloorSeparatesCategoriesOnKabum.
+		{"kabum-ps5", "ps5", 10},
 		{"meli-lego", "lego millennium falcon", 16},
 		// The case the coverage rule exists for: a specific query answered
 		// with loosely related stock that shares only the brand name.
@@ -222,6 +232,21 @@ func TestPriceFloorSeparatesCategories(t *testing.T) {
 	t.Logf("with min R$ 3.000: %d junk listings survive", len(falseKeeps))
 }
 
+// KaBuM! is where the price bound earns its keep. Its titles hide 33 of the 36
+// junk listings from every title heuristic, and the floor the live watch
+// already carries removes all of them without touching a console.
+func TestPriceFloorSeparatesCategoriesOnKabum(t *testing.T) {
+	l := load(t, "kabum-ps5", "ps5")
+	falseDrops, falseKeeps := l.score(t, Options{MinCents: 300000})
+
+	for _, d := range falseDrops {
+		t.Errorf("min price dropped a real console: %s", d)
+	}
+	if len(falseKeeps) > 0 {
+		t.Errorf("min price left %d junk listings: %v", len(falseKeeps), falseKeeps)
+	}
+}
+
 func pct(n, total int) int {
 	if total == 0 {
 		return 100
@@ -244,6 +269,8 @@ func TestSuggestFloor(t *testing.T) {
 			"LEGO sets run continuously from an R$84 polybag to a R$14.999 UCS model"},
 		{"meli-ps5", "ps5", false,
 			"Mercado Livre returned consoles only; there is no second group"},
+		{"kabum-ps5", "ps5", false,
+			"KaBuM! fills the gap Amazon leaves: R$1.394 Edge controllers and R$1.899 Portals sit between the games and the R$3.999 consoles"},
 	} {
 		t.Run(tc.base, func(t *testing.T) {
 			l := load(t, tc.base, tc.query)
