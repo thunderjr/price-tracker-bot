@@ -88,7 +88,11 @@ func formatDigest(w store.Watch, alerts []tracker.Alert, offers []store.WatchOff
 		if o.LowCents > 0 && o.LowCents < o.PriceCents {
 			fmt.Fprintf(&b, " · mín 30d %s", money(o.LowCents))
 		}
-		fmt.Fprintf(&b, "\n%s\n\n", link(truncate(o.Title, 64), o.URL))
+		b.WriteString("\n")
+		if inst := installmentLine(o); inst != "" {
+			fmt.Fprintf(&b, "%s\n", inst)
+		}
+		fmt.Fprintf(&b, "%s\n\n", link(truncate(o.Title, 64), o.URL))
 	}
 
 	// From the watch's real size, not from however many rows were fetched.
@@ -250,6 +254,24 @@ func scanAge(t time.Time) string {
 	default:
 		return fmt.Sprintf("escaneada há %d dias", int(d.Hours()/24))
 	}
+}
+
+// installmentLine renders the financing offer, e.g. "ou 10x R$ 449,90".
+//
+// The total is spelled out because it is what the instalments actually cost,
+// and it is usually more than the cash price shown above it -- the gap between
+// the two is a payment-method difference, not a discount.
+func installmentLine(o store.WatchOffer) string {
+	if o.InstallmentCount < 2 || o.InstallmentEachCents <= 0 {
+		return ""
+	}
+
+	total := int64(o.InstallmentCount) * o.InstallmentEachCents
+	line := fmt.Sprintf("_ou %dx %s", o.InstallmentCount, money(o.InstallmentEachCents))
+	if total > o.PriceCents {
+		line += fmt.Sprintf(" \\(total %s\\)", money(total))
+	}
+	return line + "_"
 }
 
 func discount(price, list int64) int {

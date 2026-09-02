@@ -305,11 +305,13 @@ func (t *Tracker) record(ctx context.Context, w store.Watch, o source.Offer, now
 
 	if shouldRecord(history, o, now) {
 		point := store.PricePoint{
-			ProductID:      id,
-			PriceCents:     o.PriceCents,
-			ListPriceCents: o.ListPriceCents,
-			SiteFlags:      o.SiteFlags,
-			SeenAt:         now,
+			ProductID:            id,
+			PriceCents:           o.PriceCents,
+			ListPriceCents:       o.ListPriceCents,
+			SiteFlags:            o.SiteFlags,
+			InstallmentCount:     o.Installments.Count,
+			InstallmentEachCents: o.Installments.Each,
+			SeenAt:               now,
 		}
 		if err := t.store.AddPricePoint(ctx, point); err != nil {
 			return nil, err

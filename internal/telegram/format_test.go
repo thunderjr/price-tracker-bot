@@ -256,3 +256,48 @@ var errTest = errTestType{}
 type errTestType struct{}
 
 func (errTestType) Error() string { return "test" }
+
+// The financing line, including the total, because the instalments usually add
+// up to more than the cash price shown above them.
+func TestFormatDigestShowsInstallments(t *testing.T) {
+	offer := digestOffer("amazon", "PlayStation 5 Slim Digital", 418406, 0, 0)
+	offer.InstallmentCount = 10
+	offer.InstallmentEachCents = 44990
+
+	got := formatDigest(store.Watch{Query: "ps5"}, nil, []store.WatchOffer{offer}, 1, nil)
+	if !strings.Contains(got, "ou 10x R$ 449,90") {
+		t.Errorf("installment line missing:\n%s", got)
+	}
+	if !strings.Contains(got, `total R$ 4\.499,00`) {
+		t.Errorf("installment total missing:\n%s", got)
+	}
+	if bad := unescapedOutsideLinks(t, got); len(bad) > 0 {
+		t.Errorf("unescaped MarkdownV2 characters %v in:\n%s", bad, got)
+	}
+}
+
+// No plan, or a single "instalment", means nothing to show.
+func TestInstallmentLineOmittedWhenAbsent(t *testing.T) {
+	for name, o := range map[string]store.WatchOffer{
+		"no plan":     {PriceCents: 418406},
+		"one payment": {PriceCents: 418406, InstallmentCount: 1, InstallmentEachCents: 418406},
+		"zero amount": {PriceCents: 418406, InstallmentCount: 10},
+	} {
+		if got := installmentLine(o); got != "" {
+			t.Errorf("%s: installmentLine = %q, want empty", name, got)
+		}
+	}
+}
+
+// When the instalments add up to no more than the cash price there is no total
+// worth spelling out.
+func TestInstallmentLineOmitsRedundantTotal(t *testing.T) {
+	o := store.WatchOffer{PriceCents: 449900, InstallmentCount: 10, InstallmentEachCents: 44990}
+	got := installmentLine(o)
+	if !strings.Contains(got, "ou 10x R$ 449,90") {
+		t.Errorf("installmentLine = %q", got)
+	}
+	if strings.Contains(got, "total") {
+		t.Errorf("installmentLine = %q, want no total when it equals the price", got)
+	}
+}

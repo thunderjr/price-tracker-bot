@@ -28,6 +28,8 @@ var migrations = []string{
 	`ALTER TABLE watches ADD COLUMN allow_international INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE watches ADD COLUMN require_terms TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE watches ADD COLUMN notified_best_cents INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE price_points ADD COLUMN installment_count INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE price_points ADD COLUMN installment_each_cents INTEGER NOT NULL DEFAULT 0`,
 }
 
 // ErrNotFound is returned when a lookup by id matches nothing.
@@ -81,7 +83,11 @@ type PricePoint struct {
 	PriceCents     int64
 	ListPriceCents int64
 	SiteFlags      []string
-	SeenAt         time.Time
+	// InstallmentCount and InstallmentEachCents are the financing offer as
+	// advertised. Stored per observation because it moves with the price.
+	InstallmentCount     int
+	InstallmentEachCents int64
+	SeenAt               time.Time
 }
 
 // Store is the database handle.
@@ -353,7 +359,8 @@ func (s *Store) UnlinkWatchProduct(ctx context.Context, watchID, productID int64
 // LatestPrice returns the most recent observation for a product.
 func (s *Store) LatestPrice(ctx context.Context, productID int64) (*PricePoint, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT product_id, price_cents, list_price_cents, site_flags, seen_at
+		SELECT product_id, price_cents, list_price_cents, site_flags,
+		       COALESCE(installment_count, 0), COALESCE(installment_each_cents, 0), seen_at
 		FROM price_points WHERE product_id = ?
 		ORDER BY seen_at DESC, id DESC LIMIT 1`, productID)
 
@@ -370,9 +377,11 @@ func (s *Store) LatestPrice(ctx context.Context, productID int64) (*PricePoint, 
 // AddPricePoint appends an observation.
 func (s *Store) AddPricePoint(ctx context.Context, p PricePoint) error {
 	return s.exec(ctx, "add price point", `
-		INSERT INTO price_points (product_id, price_cents, list_price_cents, site_flags, seen_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		p.ProductID, p.PriceCents, p.ListPriceCents, strings.Join(p.SiteFlags, "|"), formatTime(p.SeenAt))
+		INSERT INTO price_points (product_id, price_cents, list_price_cents, site_flags,
+		                          installment_count, installment_each_cents, seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.ProductID, p.PriceCents, p.ListPriceCents, strings.Join(p.SiteFlags, "|"),
+		p.InstallmentCount, p.InstallmentEachCents, formatTime(p.SeenAt))
 }
 
 // PriceHistory returns a product's observations since a cutoff, oldest first.
@@ -384,7 +393,8 @@ func (s *Store) PriceHistory(ctx context.Context, productID int64, since time.Ti
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT product_id, price_cents, list_price_cents, site_flags, seen_at
+		SELECT product_id, price_cents, list_price_cents, site_flags,
+		       COALESCE(installment_count, 0), COALESCE(installment_each_cents, 0), seen_at
 		FROM price_points
 		WHERE product_id = ? AND (? = '' OR seen_at >= ?)
 		ORDER BY seen_at, id`, productID, cutoff, cutoff)
@@ -410,7 +420,8 @@ func scanPricePoint(row rowScanner) (PricePoint, error) {
 		flags string
 		seen  string
 	)
-	if err := row.Scan(&p.ProductID, &p.PriceCents, &p.ListPriceCents, &flags, &seen); err != nil {
+	if err := row.Scan(&p.ProductID, &p.PriceCents, &p.ListPriceCents, &flags,
+		&p.InstallmentCount, &p.InstallmentEachCents, &seen); err != nil {
 		return PricePoint{}, err
 	}
 	if flags != "" {
@@ -456,8 +467,12 @@ type WatchOffer struct {
 	PriceCents     int64
 	ListPriceCents int64
 	SiteFlags      []string
-	SeenAt         time.Time
-	LowCents       int64 // lowest price recorded in the trailing window
+	// InstallmentCount and InstallmentEachCents are the financing offer as
+	// advertised for this price.
+	InstallmentCount     int
+	InstallmentEachCents int64
+	SeenAt               time.Time
+	LowCents             int64 // lowest price recorded in the trailing window
 }
 
 // WatchOffers returns a watch's products ranked cheapest first, each with its
@@ -465,7 +480,8 @@ type WatchOffer struct {
 func (s *Store) WatchOffers(ctx context.Context, watchID int64, window time.Duration, limit int) ([]WatchOffer, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.id, p.source, p.external_id, p.title, p.url, p.image_url, p.seller, p.international,
-		       lp.price_cents, lp.list_price_cents, lp.site_flags, lp.seen_at,
+		       lp.price_cents, lp.list_price_cents, lp.site_flags,
+		       COALESCE(lp.installment_count, 0), COALESCE(lp.installment_each_cents, 0), lp.seen_at,
 		       COALESCE((SELECT MIN(price_cents) FROM price_points
 		                 WHERE product_id = p.id AND seen_at >= ?), lp.price_cents)
 		FROM watch_products wp
@@ -491,7 +507,8 @@ func (s *Store) WatchOffers(ctx context.Context, watchID int64, window time.Dura
 			seen  string
 		)
 		if err := rows.Scan(&o.ID, &o.Source, &o.ExternalID, &o.Title, &o.URL, &o.ImageURL, &o.Seller, &intl,
-			&o.PriceCents, &o.ListPriceCents, &flags, &seen, &o.LowCents); err != nil {
+			&o.PriceCents, &o.ListPriceCents, &flags,
+			&o.InstallmentCount, &o.InstallmentEachCents, &seen, &o.LowCents); err != nil {
 			return nil, fmt.Errorf("store: scan watch offer: %w", err)
 		}
 		o.International = intl != 0

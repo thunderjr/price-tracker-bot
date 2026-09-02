@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS price_points (
     price_cents      INTEGER NOT NULL,
     list_price_cents INTEGER NOT NULL DEFAULT 0,
     site_flags       TEXT    NOT NULL DEFAULT '',
+    installment_count      INTEGER NOT NULL DEFAULT 0,
+    installment_each_cents INTEGER NOT NULL DEFAULT 0,
     seen_at          TEXT    NOT NULL
 );
 
