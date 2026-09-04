@@ -15,7 +15,7 @@ const usage = `ptb - price tracker bot
 Usage:
   ptb serve                      run the Telegram bot and the scan scheduler
   ptb probe <source> <query>     search one source now and print the results
-                                 (source: amazon | meli | all | chrome)
+                                 (source: amazon | kabum | meli | all | chrome)
   ptb watches [id]               list watches, or one watch's tracked listings
   ptb track [flags] <query>      add a watch
   ptb watch [flags] <id>         change a watch's query/min/max/target/exclude
